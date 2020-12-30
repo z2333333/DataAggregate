@@ -1,6 +1,5 @@
 package com.vd.canary.obmp.order.api.response;
 
-import com.vd.canary.obmp.aggregate.annotation.DataAggregateType;
 import com.vd.canary.obmp.order.api.response.vo.PomPurchaseContractLineVO;
 import com.vd.canary.obmp.order.api.response.vo.order.PomPurchaseContractHeadVO;
 import io.swagger.annotations.ApiModelProperty;
@@ -17,7 +16,6 @@ import java.util.List;
  */
 @Setter
 @Getter
-@DataAggregateType
 public class PomPurchaseContractDetailResp implements Serializable {
 	private static final long serialVersionUID = 3697188350855985629L;
 

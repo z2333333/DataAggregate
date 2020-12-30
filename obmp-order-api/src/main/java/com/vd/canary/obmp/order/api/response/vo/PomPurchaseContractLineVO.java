@@ -28,6 +28,7 @@ public class PomPurchaseContractLineVO implements Serializable {
     /**
      *  采购订单行ID 
      */
+    @DataAggregatePropertyBind("skuId")
     private String purchaseContractLineId;
 
 
