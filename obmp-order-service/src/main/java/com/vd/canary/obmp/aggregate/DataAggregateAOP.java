@@ -65,9 +65,12 @@ public class DataAggregateAOP {
             ResponseBO response = (ResponseBO) proceed;
             //todo response<List类型返回值>支持
             Object responseData = response.getData();
-            Class<?> clazz = responseData.getClass();
+            Class<?> clazz = getAuthenticClass(responseData);
+            if (clazz == null) {
+                return proceed;
+            }
             if (!AggregateTargetMap.containsKey(clazz.getName())) {
-                AggregateTargetNode aggregateTargetNode = parsingClass(new StringBuffer(), clazz, responseData, new AggregateTargetNode());
+                AggregateTargetNode aggregateTargetNode = parsingClass(new StringBuffer(), clazz, new AggregateTargetNode());
                 aggregateTargetNode.initAggregateNode();
                 AggregateTargetMap.put(clazz.getName(), aggregateTargetNode);
             }
@@ -75,22 +78,10 @@ public class DataAggregateAOP {
             //todo wapper?
             AggregateTargetNode targetNode = AggregateTargetMap.get(clazz.getName());
 
-            //通过理论可访问路径构建实际可访问路径
-            List<String> actualPathList = new ArrayList<>();
-            List<String> ignoreList = new ArrayList<>();
-            for (String theoryPath : targetNode.propertyList) {
-//                    if (filterIgnore(ignoreList, theoryPath)) {
-//                        continue;
-//                    }
-                List buildStatementList = buildStatementList(responseData, new ArrayList(), theoryPath, "", "", "write", ignoreList);
-                actualPathList.addAll(buildStatementList);
-            }
-            if (actualPathList.size() == 0) {
-                return proceed;
-            }
-
             //todo 复杂情况的值绑定状态,如resp.xx+resp.list.xx绑定到同一个执行器
+            //遍历聚合对象中绑定了执行器的属性
             for (Map.Entry<String, List<AggregateSourceNode>> targetPropertyEntry : targetNode.propertyAggregateMap.entrySet()) {
+                //遍历每个属性绑定的所有执行器
                 for (AggregateSourceNode sourceNode : targetPropertyEntry.getValue()) {
                     List<OrderDataAggregate> instances = new ArrayList(Arrays.asList((OrderDataAggregate) sourceNode.sourceClass.getDeclaredConstructor().newInstance()));
                     Map<String, String> classMap = targetNode.bindPropertyMap.get(sourceNode.sourceClass.getName());
@@ -98,19 +89,22 @@ public class DataAggregateAOP {
 
                     //遍历执行器的属性,如果属性在聚合对象中存在绑定关系,则从聚合对象中获取对应的值注入到执行器中的属性
                     for (Map.Entry<String, PropertyDescriptor> entry : sourceNode.propertyAggregateMap.entrySet()) {
-                        String k = entry.getKey();
+                        String sourcePropertyName = entry.getKey();
                         Method writeMethod = entry.getValue().getWriteMethod();
                         List<String> buildStatementList = null;
                         String tarProperty;
-                        //todo 通过actualPathList获取取值语句
-                        if (classMap != null && classMap.containsKey(k)) {
-                            tarProperty = classMap.get(k);
+
+                        //从聚合对象解析关系中获取对应属性的属性平铺路径(理论访问路径)
+                        if (classMap != null && classMap.containsKey(sourcePropertyName)) {
+                            tarProperty = classMap.get(sourcePropertyName);
                         } else {
-                            tarProperty = defaultClassMap == null ? null : defaultClassMap.get(k);
+                            tarProperty = defaultClassMap == null ? null : defaultClassMap.get(sourcePropertyName);
                         }
 
                         if (tarProperty != null) {
-                            buildStatementList = filterTarStatementList(actualPathList, tarProperty);
+                            //从属性理论访问路径构建实际访问路径
+                            List<String> ignoreList = new ArrayList<>();
+                            buildStatementList = buildStatementList(responseData, new ArrayList(), tarProperty, "", "", "write", ignoreList);
                         }
                         //注入依赖值
                         //先不考虑执行器的属性绑定跨层的情况
@@ -145,13 +139,14 @@ public class DataAggregateAOP {
 
                         //数据反写
                         for (String allow : sourceNode.allowPropertyList) {
-                            List<String> tarStatementList = findTarStatementList(actualPathList, targetPropertyEntry.getKey(), allow);
-                            if (tarStatementList.size() == 0) {
+                            List<String> targetStatementList = buildStatementList(responseData, new ArrayList(), targetPropertyEntry.getKey(), "", "", "write", new ArrayList<>());
+                            //List<String> tarStatementList = findTarStatementList(actualPathList, targetPropertyEntry.getKey(), allow);
+                            if (targetStatementList.size() == 0) {
                                 continue;
                             }
                             PropertyDescriptor propertyDescriptor = sourceNode.propertyAggregateMap.get(allow);
                             Object val = propertyDescriptor.getReadMethod().invoke(dataAggregate);
-                            String filterTarStatement = filterTarStatementList(tarStatementList, i);
+                            String filterTarStatement = filterTarStatementList(targetStatementList, i);
 
                             //issue:lombok@Accessors(chain = true)注解生成的set方法无法被此工具类识别
                             //throw NoSuchMethodException
@@ -166,7 +161,7 @@ public class DataAggregateAOP {
 
     //todo 获取注解了bind的路径属性名
     //获取
-    private AggregateTargetNode parsingClass(StringBuffer absolutePathName, Class<?> clazz, Object resultObj, AggregateTargetNode aggregateTargetNode) throws ClassNotFoundException, NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
+    private AggregateTargetNode parsingClass(StringBuffer absolutePathName, Class<?> clazz, AggregateTargetNode aggregateTargetNode) throws ClassNotFoundException, NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
         for (Field field : clazz.getDeclaredFields()) {
             //忽略static属性
             if (Modifier.isStatic(field.getModifiers())) {
@@ -267,8 +262,7 @@ public class DataAggregateAOP {
                     }
                 }
 
-                parsingClass(new StringBuffer(absolutePathName.toString() + "." + field.getName()), propertyTypeClass, resultObj,
-                        aggregateTargetNode);
+                parsingClass(new StringBuffer(absolutePathName.toString() + "." + field.getName()), propertyTypeClass, aggregateTargetNode);
             }
         }
 
@@ -428,6 +422,32 @@ public class DataAggregateAOP {
         }
 
         return false;
+    }
+
+    private Class getAuthenticClass(Object source) {
+        if (source instanceof List) {
+            while (source instanceof List) {
+                source = getFirstListVal((List) source);
+                if (source == null) {
+                    return null;
+                }
+            }
+        } else if (source instanceof Map) {
+            //未支持map
+            return null;
+        }
+        if (!isParsingClass(source.getClass())) {
+            return null;
+        }
+        return source.getClass();
+    }
+
+    private Object getFirstListVal(List source) {
+        if (source.size() > 0) {
+            return source.get(0);
+        } else {
+            return null;
+        }
     }
 
     /**

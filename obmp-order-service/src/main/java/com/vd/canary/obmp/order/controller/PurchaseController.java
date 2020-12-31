@@ -162,6 +162,7 @@ public class PurchaseController {
      * @param req
      * @return com.vd.canary.core.bo.ResponseBO<com.vd.canary.obmp.order.api.response.PomPurchaseContractBriefDetailResp>
      */
+    @DataAggregate()
     @PostMapping("/briefInfo")
     public ResponseBO<List<PomPurchaseContractBriefDetailResp>> purchaseOrderBriefDetail(@Valid @RequestBody PomPurchaseContractBriefDetailReq req) {
         PomPurchaseContractBriefDetailAllReq briefDetailAllReq = BeanUtil.convert(req, PomPurchaseContractBriefDetailAllReq.class);
