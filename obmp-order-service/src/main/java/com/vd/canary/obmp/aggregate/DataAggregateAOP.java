@@ -145,6 +145,7 @@ public class DataAggregateAOP {
                             String possiblePath = curTargetPropertyName.equals("~") ? waitWriteVal : curTargetPropertyName + "." + waitWriteVal;
                             List<String> targetStatementList = buildStatementList(responseData, new ArrayList(), possiblePath, "", "", "write", new ArrayList<>());
                             if (targetStatementList.size() == 0) {
+                                //todo 分支未测
                                 //完整查找
                                 //通过聚合对象理论可访问路径构建实际可访问路径
                                 List<String> actualPathList = new ArrayList<>();
@@ -322,6 +323,7 @@ public class DataAggregateAOP {
 
         Object propertyValue = null;
         try {
+            //todo 用检测属性的方法提高性能
             propertyValue = PropertyUtils.getProperty(source, curPath);
         } catch (NoSuchMethodException e) {
             //注:Bean拷贝后类型为List的属性的实际类型会变成source中相同属性名的类型而不是target中对应属性名泛型指定的类型
