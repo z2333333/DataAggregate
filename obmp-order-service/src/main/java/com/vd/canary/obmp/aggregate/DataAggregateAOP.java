@@ -305,18 +305,10 @@ public class DataAggregateAOP {
         if ("".equals(nextPath)) {
             return statementList;
         }
-        int index = nextPath.indexOf(".");
-        String curPath;
-        if (index > 0) {
-            curPath = nextPath.substring(0, index);
-            nextPath = nextPath.substring(index);
-        } else if (index == 0) {
-            curPath = nextPath.substring(1);
-            nextPath = "";
-        } else {
-            curPath = nextPath;
-            nextPath = "";
-        }
+
+        String[] cutOutPath = cutOutPath(nextPath);
+        String curPath = cutOutPath[0];
+        nextPath = cutOutPath[1];
 
         finalPath = transmitPath.equals("") ? finalPath + "." + curPath : finalPath + transmitPath + "." + curPath;
         finalPath = finalPath.charAt(0) == '.' ? finalPath.substring(1) : finalPath;
@@ -473,6 +465,35 @@ public class DataAggregateAOP {
         } else {
             return null;
         }
+    }
+
+    /***
+     * 截取下一级路径
+     *
+     * @param nextPath
+     * @return void
+     */
+    private String[] cutOutPath(String nextPath) {
+        String curPath;
+        int index = nextPath.indexOf(".");
+        if (index > 0) {
+            curPath = nextPath.substring(0, index);
+            nextPath = nextPath.substring(index);
+        } else if (index == 0) {
+            curPath = nextPath.substring(1);
+            int index1 = curPath.indexOf(".");
+            if (index1 > 0) {
+                nextPath = curPath.substring(index1);
+                curPath = curPath.substring(0, index1);
+            } else {
+                nextPath = "";
+            }
+        } else {
+            curPath = nextPath;
+            nextPath = "";
+        }
+
+        return new String[]{curPath, nextPath};
     }
 
     /**
