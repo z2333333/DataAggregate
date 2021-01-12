@@ -84,7 +84,7 @@ public class DataAggregateAOP {
                 String curTargetPropertyName = targetPropertyEntry.getKey();
                 //遍历每个属性绑定的所有执行器
                 for (AggregateSourceNode sourceNode : targetPropertyEntry.getValue()) {
-                    List<OrderDataAggregate> instances = new ArrayList(Arrays.asList((OrderDataAggregate) sourceNode.sourceClass.getDeclaredConstructor().newInstance()));
+                    List<OrderDataAggregate> instances = new ArrayList();
                     Map<String, String> classMap = targetNode.bindPropertyMap.get(sourceNode.sourceClass.getName());
                     Map<String, String> defaultClassMap = targetNode.bindPropertyMap.get("DEFAULT_CLASS_NAME");
 
@@ -109,6 +109,10 @@ public class DataAggregateAOP {
                         //todo 先不考虑执行器的属性绑定跨层的情况
                         //注入依赖值
                         if (buildStatementList != null && buildStatementList.size() > 0) {
+                            if (instances.size() == 0) {
+                                instances.add((OrderDataAggregate) sourceNode.sourceClass.getDeclaredConstructor().newInstance());
+                            }
+
                             int size = buildStatementList.size();
 
                             //从多原则
@@ -165,11 +169,14 @@ public class DataAggregateAOP {
                             if (targetStatementList.size() > 0) {
                                 PropertyDescriptor propertyDescriptor = sourceNode.propertyAggregateMap.get(waitWriteVal);
                                 Object val = propertyDescriptor.getReadMethod().invoke(dataAggregate);
-                                String filterTarStatement = filterTarStatementList(targetStatementList, i);
+                                //todo 当前适配1:1与n:n
+                                //实际可访问路径与执行器的index有序且对应,直接执行
+                                //String filterTarStatement = filterTarStatementList(targetStatementList, i);
+                                String targetStatement = targetStatementList.get(i);
 
                                 //issue:lombok@Accessors(chain = true)注解生成的set方法无法被此工具类识别
                                 //throw NoSuchMethodException
-                                PropertyUtils.setProperty(responseData, filterTarStatement, val);
+                                PropertyUtils.setProperty(responseData, targetStatement, val);
                             }
                         }
                     }
