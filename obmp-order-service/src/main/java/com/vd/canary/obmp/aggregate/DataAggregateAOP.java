@@ -106,10 +106,13 @@ public class DataAggregateAOP {
                             //从属性理论访问路径构建实际访问路径
                             buildStatementList = buildStatementList(responseData, new ArrayList(), tarProperty, "", "", "read", new ArrayList<>());
                         }
+                        //todo 先不考虑执行器的属性绑定跨层的情况
                         //注入依赖值
-                        //先不考虑执行器的属性绑定跨层的情况
-                        if (buildStatementList != null) {
+                        if (buildStatementList != null && buildStatementList.size() > 0) {
                             int size = buildStatementList.size();
+
+                            //从多原则
+                            //聚合对象与执行器1:1与n:n的情况
                             if (buildStatementList.size() > 1) {
                                 if (instances.size() == 1) {
                                     //todo 深clone方式
