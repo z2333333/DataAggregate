@@ -150,6 +150,7 @@ public class DataAggregateAOP {
                             //@DataAggregateType注解所在层级优先
                             //~表示根路径
                             String possiblePath = curTargetPropertyName.equals("~") ? waitWriteVal : curTargetPropertyName + "." + waitWriteVal;
+                            //todo 可以在read模式时一起返回write,做区分,这样只用调用一次
                             List<String> targetStatementList = buildStatementList(responseData, new ArrayList(), possiblePath, "", "", "write", new ArrayList<>());
                             if (targetStatementList.size() == 0) {
                                 //todo 分支未测
@@ -451,6 +452,13 @@ public class DataAggregateAOP {
         return false;
     }
 
+    /**
+     * 获取返回对象的真实类型
+     * Ex:List<A> return A
+     *
+     * @param source
+     * @return java.lang.Class
+     */
     private Class getAuthenticClass(Object source) {
         if (source instanceof List) {
             while (source instanceof List) {
