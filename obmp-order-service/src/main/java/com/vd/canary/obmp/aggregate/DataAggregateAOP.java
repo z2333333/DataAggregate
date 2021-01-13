@@ -104,7 +104,7 @@ public class DataAggregateAOP {
 
                         if (tarProperty != null) {
                             //从属性理论访问路径构建实际访问路径
-                            buildStatementList = buildStatementList(responseData, new ArrayList(), tarProperty, "", "", "read", new ArrayList<>());
+                            buildStatementList = buildStatementList(responseData, new ArrayList(), tarProperty, "", "", "", "read", new ArrayList<>());
                         }
                         //todo 先不考虑执行器的属性绑定跨层的情况
                         //注入依赖值
@@ -151,14 +151,15 @@ public class DataAggregateAOP {
                             //~表示根路径
                             String possiblePath = curTargetPropertyName.equals("~") ? waitWriteVal : curTargetPropertyName + "." + waitWriteVal;
                             //todo 可以在read模式时一起返回write,做区分,这样只用调用一次
-                            List<String> targetStatementList = buildStatementList(responseData, new ArrayList(), possiblePath, "", "", "write", new ArrayList<>());
+                            List<String> targetStatementList = buildStatementList(responseData, new ArrayList(), possiblePath, "", "", "", "write", new ArrayList<>());
+
                             if (targetStatementList.size() == 0) {
                                 //todo 分支未测
                                 //完整查找
                                 //通过聚合对象理论可访问路径构建实际可访问路径
                                 List<String> actualPathList = new ArrayList<>();
                                 for (String theoryPath : targetNode.propertyList) {
-                                    List buildStatementList = buildStatementList(responseData, new ArrayList(), theoryPath, "", "", "write", new ArrayList<>());
+                                    List buildStatementList = buildStatementList(responseData, new ArrayList(), theoryPath, "", "", "", "write", new ArrayList<>());
                                     actualPathList.addAll(buildStatementList);
                                 }
                                 if (actualPathList.size() == 0) {
@@ -175,9 +176,18 @@ public class DataAggregateAOP {
                                 //String filterTarStatement = filterTarStatementList(targetStatementList, i);
                                 String targetStatement = targetStatementList.get(i);
 
-                                //issue:lombok@Accessors(chain = true)注解生成的set方法无法被此工具类识别
+
                                 //throw NoSuchMethodException
-                                PropertyUtils.setProperty(responseData, targetStatement, val);
+
+                                try {
+                                    PropertyUtils.setProperty(responseData, targetStatement, val);
+                                } catch (NoSuchMethodException e) {
+                                    //抛出该异常的情况
+                                    //1.issue:lombok@Accessors(chain = true)注解生成的set方法无法被此工具类识别
+                                    //2.buildStatementList中对write模式的处理(聚合对象中不需要执行器中的某些属性,但write模式中加进来了)
+                                    //todo 第2点的处理存在矛盾,需重新评估
+                                    log.error("数据聚合-当前反写的字段不存在,路径={}", targetStatement, e);
+                                }
                             }
                         }
                     }
@@ -306,14 +316,28 @@ public class DataAggregateAOP {
      * @param source        当前取出对象
      * @param statementList 构建语句List
      * @param nextPath      下一层路径
-     * @param transmitPath  标示类型为list属性的数组下标
+     * @param transferPrefixIndex  标示source类型为list属性的数组下标
+     * @param transferSuffixIndex  标示property类型为list属性的数组下标
      * @return java.util.List
      */
     //todo 问题:1.多层嵌套属性最外层为空时里层无需遍历 2.多层嵌套属性上层属性不为空时下层无需重新获取最外层
     //todo 多层list时PropertyUtils支持以[0]直接访问最外层属性,[0].[0].xxx
-    private List buildStatementList(Object source, List statementList, String nextPath, String transmitPath, String finalPath, String Mode, List<String> ignoreList) throws IllegalAccessException, NoSuchMethodException, InvocationTargetException {
+    //todo 字符串初始值为null
+    private List buildStatementList(Object source, List statementList, String nextPath, String transferPrefixIndex, String transferSuffixIndex, String finalPath, String Mode, List<String> ignoreList) throws IllegalAccessException, InvocationTargetException {
         //todo 多层list还没测
         if ("".equals(nextPath)) {
+            return statementList;
+        }
+
+        //支持List<... Resp>结构的source解析
+        if (source instanceof List) {
+            List sources = (List) source;
+            for (int i = 0; i < sources.size(); i++) {
+                Object o = sources.get(i);
+                String prefix = "[" + i + "]";
+
+                buildStatementList(o, statementList, nextPath, prefix, transferSuffixIndex, finalPath, Mode, ignoreList);
+            }
             return statementList;
         }
 
@@ -321,8 +345,9 @@ public class DataAggregateAOP {
         String curPath = cutOutPath[0];
         nextPath = cutOutPath[1];
 
-        finalPath = transmitPath.equals("") ? finalPath + "." + curPath : finalPath + transmitPath + "." + curPath;
+        finalPath = transferSuffixIndex.equals("") ? finalPath + "." + curPath : finalPath + transferSuffixIndex + "." + curPath;
         finalPath = finalPath.charAt(0) == '.' ? finalPath.substring(1) : finalPath;
+        finalPath = transferPrefixIndex.equals("") ? finalPath : transferPrefixIndex + "." + finalPath;
 
         Object propertyValue = null;
         try {
@@ -330,7 +355,7 @@ public class DataAggregateAOP {
             propertyValue = PropertyUtils.getProperty(source, curPath);
         } catch (NoSuchMethodException e) {
             //注:Bean拷贝后类型为List的属性的实际类型会变成source中相同属性名的类型而不是target中对应属性名泛型指定的类型
-            //issue 1.理论上存在该属性访问路径,实际上访问不到(list中的class变了) 2.理论无-实际有的情况无需考虑
+            //issue 1.理论上存在该属性访问路径(parsingClass解析),实际上访问不到(list中的class变了) 2.理论无-实际有的情况无需考虑
             //写模式加入到路径中(属性在最外层(或嵌套属性的最外层)的情况)
             if (Mode.equals("write")) {
                 statementList.add(finalPath);
@@ -353,13 +378,14 @@ public class DataAggregateAOP {
             List sourceList = (List) propertyValue;
             for (int i = 0; i < sourceList.size(); i++) {
                 Object o = sourceList.get(i);
-                String s = "[" + i + "]";
+                String suffix = "[" + i + "]";
 
-                buildStatementList(o, statementList, nextPath, s, finalPath, Mode, ignoreList);
+                transferPrefixIndex = "";
+                buildStatementList(o, statementList, nextPath, transferPrefixIndex, suffix, finalPath, Mode, ignoreList);
             }
         } else {
             if (isParsingClass(propertyValue.getClass()) && !nextPath.equals("")) {
-                buildStatementList(propertyValue, statementList, nextPath, transmitPath, finalPath, Mode, ignoreList);
+                buildStatementList(propertyValue, statementList, nextPath, transferPrefixIndex, transferSuffixIndex, finalPath, Mode, ignoreList);
             } else {
                 statementList.add(finalPath);
             }

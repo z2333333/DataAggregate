@@ -78,4 +78,6 @@ public class PomPurchaseContractPaymentVO {
      */
     private String conditionType;
 
+    private String testProperty1;
+    private String testProperty2;
 }
