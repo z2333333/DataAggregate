@@ -1,4 +1,4 @@
-package com.vd.canary.aggregate.manytomany;
+package com.vd.canary.aggregate.manytomany.t1;
 
 import com.alibaba.fastjson.JSON;
 import com.vd.canary.aggregate.DataAggregateInstance;
@@ -8,12 +8,13 @@ import com.vd.canary.obmp.aggregate.DataAggregateAOP;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
 /**
  * 复杂场景测试1
  * 特点:
- * 1.指定多个执行器
+ * 1.指定多个执行器(在相同属性中)
  * 2.绑定属性位于嵌套容器中
  * 3.执行器反写时为多对多关系
  *
@@ -22,6 +23,38 @@ import static org.junit.Assert.assertNotNull;
  */
 public class ManyToManyTest1 {
     private static ResponseBO<PurchaseDetailResp> responseBO;
+
+    @BeforeClass
+    public static void setup() {
+        PurchaseDetailResp resp = JSON.parseObject(text, PurchaseDetailResp.class);
+        responseBO = ResponseUtil.ok(resp);
+    }
+
+    @Test
+    public void manyToManyTest1() {
+        DataAggregateAOP dataAggregateAOP = DataAggregateInstance.getInstance();
+        dataAggregateAOP.doDataAggregate(responseBO);
+        assertNotNull(responseBO.getData());
+        assertNotNull(responseBO.getData().getPomPurchaseContractLineList());
+
+        assertNotNull(responseBO.getData().getPomPurchaseContractLineList().get(0).getNoTaxPrice());
+        assertEquals("7.13",responseBO.getData().getPomPurchaseContractLineList().get(0).getNoTaxPrice().toString());
+
+        assertNotNull(responseBO.getData().getPomPurchaseContractLineList().get(1).getNoTaxPrice());
+        assertEquals("12.87",responseBO.getData().getPomPurchaseContractLineList().get(1).getNoTaxPrice().toString());
+
+        assertNotNull(responseBO.getData().getPomPurchaseContractLineList().get(0).getTestProperty1());
+        assertEquals("我是商品Id:1342294065443917826的辅助单位",responseBO.getData().getPomPurchaseContractLineList().get(0).getTestProperty1());
+        assertEquals("我是商品Id:1342294065443917826的辅助数量",responseBO.getData().getPomPurchaseContractLineList().get(0).getTestProperty2());
+
+        assertNotNull(responseBO.getData().getPomPurchaseContractLineList().get(1).getTestProperty1());
+        assertEquals("我是商品Id:1342294065481666561的辅助单位",responseBO.getData().getPomPurchaseContractLineList().get(1).getTestProperty1());
+        assertEquals("我是商品Id:1342294065481666561的辅助数量",responseBO.getData().getPomPurchaseContractLineList().get(1).getTestProperty2());
+    }
+
+
+
+
     private static String text ="{\n" +
             "\t\t\"pomPurchaseContractHeadVO\": {\n" +
             "\t\t\t\"attachmentAlreadyBusinessType\": \"PurchaseHeadAlreadyApprove\",\n" +
@@ -146,18 +179,4 @@ public class ManyToManyTest1 {
             "\t\t}],\n" +
             "\t\t\"pomPurchaseContractPaymentVOList\": []\n" +
             "\t}";
-
-    @BeforeClass
-    public static void setup() {
-        PurchaseDetailResp resp = JSON.parseObject(text, PurchaseDetailResp.class);
-        responseBO = ResponseUtil.ok(resp);
-    }
-
-    @Test
-    public void manyToManyTest1() {
-        DataAggregateAOP dataAggregateAOP = DataAggregateInstance.getInstance();
-        dataAggregateAOP.doDataAggregate(responseBO);
-        assertNotNull(responseBO.getData());
-        //assertEquals("123", responseBO.getData().getName());
-    }
 }

@@ -1,4 +1,4 @@
-package com.vd.canary.aggregate.manytomany;
+package com.vd.canary.aggregate.manytomany.t1;
 
 import com.vd.canary.obmp.aggregate.AbstractOrderDataAggregate;
 import lombok.Data;

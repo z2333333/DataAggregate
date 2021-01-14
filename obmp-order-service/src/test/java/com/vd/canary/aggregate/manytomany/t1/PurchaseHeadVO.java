@@ -1,4 +1,4 @@
-package com.vd.canary.aggregate.manytomany;
+package com.vd.canary.aggregate.manytomany.t1;
 
 import com.vd.canary.obmp.order.api.operation.sale.response.ContractAddressInfoVo;
 import lombok.Data;
