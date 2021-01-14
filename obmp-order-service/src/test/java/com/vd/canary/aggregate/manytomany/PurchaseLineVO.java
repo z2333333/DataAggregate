@@ -1,4 +1,4 @@
-package DataAggregate;
+package com.vd.canary.aggregate.manytomany;
 
 import com.vd.canary.obmp.aggregate.annotation.DataAggregatePropertyBind;
 import com.vd.canary.obmp.aggregate.annotation.DataAggregateType;
@@ -18,9 +18,9 @@ import java.math.BigDecimal;
  * Created with Canary Automatic Code Generator  </p>
  */
 @Data
-@DataAggregateType(classNames = {
-        "com.vd.canary.obmp.aggregate.actuator.OrderLineTax",
-        "com.vd.canary.obmp.aggregate.actuator.OrderLineAuxiliaryUnit"
+@DataAggregateType({
+        OrderLineTaxActuator.class,
+        OrderLineAuxiliaryUnitActuator.class
 })
 public class PurchaseLineVO implements Serializable {
 

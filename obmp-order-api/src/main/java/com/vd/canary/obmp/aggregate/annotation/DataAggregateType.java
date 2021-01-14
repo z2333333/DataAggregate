@@ -11,7 +11,7 @@ import java.lang.annotation.*;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface DataAggregateType {
-    /** 二选一 */
+    /* 二选一 */
 
     /***
      * 执行器类

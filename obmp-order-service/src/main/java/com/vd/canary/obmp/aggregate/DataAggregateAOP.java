@@ -1,15 +1,16 @@
 package com.vd.canary.obmp.aggregate;
 
+import cn.hutool.json.JSONUtil;
 import com.vd.canary.core.bo.ResponseBO;
 import com.vd.canary.core.bo.ResponsePageBO;
+import com.vd.canary.core.exception.BusinessException;
 import com.vd.canary.obmp.aggregate.annotation.DataAggregatePropertyBind;
 import com.vd.canary.obmp.aggregate.annotation.DataAggregateType;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.beanutils.NestedNullException;
 import org.apache.commons.beanutils.PropertyUtils;
-import org.aspectj.lang.ProceedingJoinPoint;
-import org.aspectj.lang.annotation.Around;
+import org.aspectj.lang.annotation.AfterReturning;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Pointcut;
 import org.springframework.stereotype.Component;
@@ -33,6 +34,10 @@ public class DataAggregateAOP {
     //todo 线程安全,享元
     private ConcurrentHashMap<Class<?>, AggregateSourceNode> AggregateSourceMap = new ConcurrentHashMap<>();
 
+    @Pointcut("bean(*Controller) && @annotation(com.vd.canary.obmp.aggregate.annotation.DataAggregate)")
+    public void resultAop() {
+    }
+
     public static PropertyDescriptor findTar(Class<?> beanClass, String name) {
         PropertyDescriptor[] properties = PropertyUtils.getPropertyDescriptors(beanClass);
         for (PropertyDescriptor property : properties) {
@@ -46,12 +51,15 @@ public class DataAggregateAOP {
         throw new RuntimeException("数据聚合-无法获取Bean对应属性的getter/setter");
     }
 
-    @Pointcut("bean(*Controller) && @annotation(com.vd.canary.obmp.aggregate.annotation.DataAggregate)")
+    /*@Around("resultAop()")
+    @SneakyThrows
+    public Object resultAround(ProceedingJoinPoint pjp) {
+        Object responseData = null;
+        Object proceed = pjp.proceed();
+        return proceed;
+    }*/
 
-    public void resultAop() {
-    }
-
-    /***
+    /**
      * 数据聚合AOP
      * 1.聚合对象Class静态属性解析
      * 2.聚合对象动态值解析
@@ -59,40 +67,45 @@ public class DataAggregateAOP {
      * 4.执行器执行
      * 5.执行器执行结果反写至聚合对象
      *
-     * @param pjp
-     * @return java.lang.Object
+     * @param response
+     * @return void
      * @author zhengxin
      */
-    @Around("resultAop()")
     @SneakyThrows
-    public Object resultAround(ProceedingJoinPoint pjp) {
-        if (pjp.proceed() == null) {
-            return pjp.proceed();
-        }
+    @AfterReturning(pointcut = "resultAop()", returning = "response")
+    public void doDataAggregate(Object response) {
+        //todo 测试后删除
+        log.info("数据聚合(beta日志)-response对象={}", JSONUtil.toJsonStr(response));
         Object responseData = null;
-        Object proceed = pjp.proceed();
 
         /* 支持ResponsePageBO<resp>,
          * ResponseBO<List<resp>>,ResponseBO<resp>结构返回值
          * 及上述类型的resp中任意对象、任意结构的多重嵌套(容器仅限util.List和所有位于com.vd包下的对象)
          */
-        if (proceed instanceof ResponseBO) {
-            responseData = ((ResponseBO) proceed).getData();
-        } else if (proceed instanceof ResponsePageBO) {
-            ResponsePageBO responsePageBO = (ResponsePageBO) proceed;
+        if (response instanceof ResponseBO) {
+            responseData = ((ResponseBO) response).getData();
+        } else if (response instanceof ResponsePageBO) {
+            ResponsePageBO responsePageBO = (ResponsePageBO) response;
             if (responsePageBO.getData() != null && responsePageBO.getData().getList() != null && responsePageBO.getData().getList().size() > 0) {
                 responseData = responsePageBO.getData().getList();
             }
         }
         if (responseData == null) {
-            return pjp.proceed();
+            return;
         }
+
         Class<?> clazz = getAuthenticClass(responseData);
         if (clazz == null) {
-            return proceed;
+            return;
         }
         if (!AggregateTargetMap.containsKey(clazz.getName())) {
-            AggregateTargetNode aggregateTargetNode = parsingClass(new StringBuffer(), clazz, new AggregateTargetNode());
+            AggregateTargetNode aggregateTargetNode;
+            try {
+                aggregateTargetNode = parsingClass(new StringBuffer(), clazz, new AggregateTargetNode());
+            } catch (ClassNotFoundException e) {
+                log.error("数据聚合-解析静态Class异常", e);
+                throw new BusinessException(120_000, "数据聚合-ClassNotFound:解析静态Class异常");
+            }
             aggregateTargetNode.initAggregateNode();
             AggregateTargetMap.put(clazz.getName(), aggregateTargetNode);
         }
@@ -211,11 +224,100 @@ public class DataAggregateAOP {
                 }
             }
         }
-        return proceed;
+    }
+
+    private boolean isParsingClass(Class<?> clazz) {
+        return clazz.getPackageName().contains("com.vd");
+    }
+
+    /**
+     * 聚合对象动态值解析(递归)
+     * 给定对象与对象的任意属性路径,返回当前对象该属性路径的实际可访问路径
+     *
+     * @param source              当前取出对象
+     * @param statementList       构建语句List
+     * @param nextPath            下一层路径
+     * @param transferPrefixIndex 标示source类型为list属性的数组下标
+     * @param transferSuffixIndex 标示property类型为list属性的数组下标
+     * @return java.util.List
+     * @author zhengxin
+     */
+    //todo 问题:1.多层嵌套属性最外层为空时里层无需遍历 2.多层嵌套属性上层属性不为空时下层无需重新获取最外层
+    //todo 多层list时PropertyUtils支持以[0]直接访问最外层属性,[0].[0].xxx
+    //todo 优化String
+    private List buildStatementList(Object source, List statementList, String nextPath, String transferPrefixIndex, String transferSuffixIndex, String finalPath, String Mode, List<String> ignoreList) throws IllegalAccessException, InvocationTargetException {
+        //todo 多层list还没测
+        if ("".equals(nextPath)) {
+            return statementList;
+        }
+
+        //支持List<... Resp>结构的source解析
+        if (source instanceof List) {
+            List sources = (List) source;
+            for (int i = 0; i < sources.size(); i++) {
+                Object o = sources.get(i);
+                String prefix = "[" + i + "]";
+
+                buildStatementList(o, statementList, nextPath, prefix, transferSuffixIndex, finalPath, Mode, ignoreList);
+            }
+            return statementList;
+        }
+
+        String[] cutOutPath = cutOutPath(nextPath);
+        String curPath = cutOutPath[0];
+        nextPath = cutOutPath[1];
+
+        finalPath = transferSuffixIndex.equals("") ? finalPath + "." + curPath : finalPath + transferSuffixIndex + "." + curPath;
+        finalPath = finalPath.charAt(0) == '.' ? finalPath.substring(1) : finalPath;
+        finalPath = transferPrefixIndex.equals("") ? finalPath : transferPrefixIndex + "." + finalPath;
+
+        Object propertyValue = null;
+        try {
+            //todo 用检测属性的方法提高性能
+            propertyValue = PropertyUtils.getProperty(source, curPath);
+        } catch (NoSuchMethodException e) {
+            //注:Bean拷贝后类型为List的属性的实际类型会变成source中相同属性名的类型而不是target中对应属性名泛型指定的类型
+            //issue 1.理论上存在该属性访问路径(parsingClass解析),实际上访问不到(list中的class变了) 2.理论无-实际有的情况无需考虑
+            //写模式加入到路径中(属性在最外层(或嵌套属性的最外层)的情况)
+            if (Mode.equals("write")) {
+                statementList.add(finalPath);
+                //嵌套属性最外层为null时里层属性直接忽略,防止重复报错
+                ignoreList.add(finalPath);
+                return statementList;
+            }
+        } catch (NestedNullException e) {
+            //多重嵌套属性访问里层属性时外层属性为空
+            return statementList;
+        }
+        if (propertyValue == null) {
+            statementList.add(finalPath);
+            ignoreList.add(finalPath);
+
+            return statementList;
+        }
+
+        if (propertyValue instanceof List) {
+            List sourceList = (List) propertyValue;
+            for (int i = 0; i < sourceList.size(); i++) {
+                Object o = sourceList.get(i);
+                String suffix = "[" + i + "]";
+
+                transferPrefixIndex = "";
+                buildStatementList(o, statementList, nextPath, transferPrefixIndex, suffix, finalPath, Mode, ignoreList);
+            }
+        } else {
+            if (isParsingClass(propertyValue.getClass()) && !nextPath.equals("")) {
+                buildStatementList(propertyValue, statementList, nextPath, transferPrefixIndex, transferSuffixIndex, finalPath, Mode, ignoreList);
+            } else {
+                statementList.add(finalPath);
+            }
+        }
+        return statementList;
     }
 
     /**
      * 解析静态Class对象(递归)
+     *
      * @param absolutePathName
      * @param clazz
      * @param aggregateTargetNode
@@ -227,7 +329,7 @@ public class DataAggregateAOP {
      * @throws InstantiationException
      * @author zhengxin
      */
-    private AggregateTargetNode parsingClass(StringBuffer absolutePathName, Class<?> clazz, AggregateTargetNode aggregateTargetNode) throws ClassNotFoundException, NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
+    private AggregateTargetNode parsingClass(StringBuffer absolutePathName, Class<?> clazz, AggregateTargetNode aggregateTargetNode) throws ClassNotFoundException {
         if (clazz.isAnnotationPresent(DataAggregateType.class)) {
             Class[] sourceClass = clazz.getAnnotation(DataAggregateType.class).value();
             if (sourceClass.length == 0) {
@@ -334,95 +436,6 @@ public class DataAggregateAOP {
         }
 
         return aggregateTargetNode;
-    }
-
-    private boolean isParsingClass(Class<?> clazz) {
-        return clazz.getPackageName().contains("com.vd");
-    }
-
-    /**
-     * 聚合对象动态值解析(递归)
-     * 给定对象与对象的任意属性路径,返回当前对象该属性路径的实际可访问路径
-     *
-     * @param source              当前取出对象
-     * @param statementList       构建语句List
-     * @param nextPath            下一层路径
-     * @param transferPrefixIndex 标示source类型为list属性的数组下标
-     * @param transferSuffixIndex 标示property类型为list属性的数组下标
-     * @return java.util.List
-     * @author zhengxin
-     */
-    //todo 问题:1.多层嵌套属性最外层为空时里层无需遍历 2.多层嵌套属性上层属性不为空时下层无需重新获取最外层
-    //todo 多层list时PropertyUtils支持以[0]直接访问最外层属性,[0].[0].xxx
-    //todo 优化String
-    private List buildStatementList(Object source, List statementList, String nextPath, String transferPrefixIndex, String transferSuffixIndex, String finalPath, String Mode, List<String> ignoreList) throws IllegalAccessException, InvocationTargetException {
-        //todo 多层list还没测
-        if ("".equals(nextPath)) {
-            return statementList;
-        }
-
-        //支持List<... Resp>结构的source解析
-        if (source instanceof List) {
-            List sources = (List) source;
-            for (int i = 0; i < sources.size(); i++) {
-                Object o = sources.get(i);
-                String prefix = "[" + i + "]";
-
-                buildStatementList(o, statementList, nextPath, prefix, transferSuffixIndex, finalPath, Mode, ignoreList);
-            }
-            return statementList;
-        }
-
-        String[] cutOutPath = cutOutPath(nextPath);
-        String curPath = cutOutPath[0];
-        nextPath = cutOutPath[1];
-
-        finalPath = transferSuffixIndex.equals("") ? finalPath + "." + curPath : finalPath + transferSuffixIndex + "." + curPath;
-        finalPath = finalPath.charAt(0) == '.' ? finalPath.substring(1) : finalPath;
-        finalPath = transferPrefixIndex.equals("") ? finalPath : transferPrefixIndex + "." + finalPath;
-
-        Object propertyValue = null;
-        try {
-            //todo 用检测属性的方法提高性能
-            propertyValue = PropertyUtils.getProperty(source, curPath);
-        } catch (NoSuchMethodException e) {
-            //注:Bean拷贝后类型为List的属性的实际类型会变成source中相同属性名的类型而不是target中对应属性名泛型指定的类型
-            //issue 1.理论上存在该属性访问路径(parsingClass解析),实际上访问不到(list中的class变了) 2.理论无-实际有的情况无需考虑
-            //写模式加入到路径中(属性在最外层(或嵌套属性的最外层)的情况)
-            if (Mode.equals("write")) {
-                statementList.add(finalPath);
-                //嵌套属性最外层为null时里层属性直接忽略,防止重复报错
-                ignoreList.add(finalPath);
-                return statementList;
-            }
-        } catch (NestedNullException e) {
-            //多重嵌套属性访问里层属性时外层属性为空
-            return statementList;
-        }
-        if (propertyValue == null) {
-            statementList.add(finalPath);
-            ignoreList.add(finalPath);
-
-            return statementList;
-        }
-
-        if (propertyValue instanceof List) {
-            List sourceList = (List) propertyValue;
-            for (int i = 0; i < sourceList.size(); i++) {
-                Object o = sourceList.get(i);
-                String suffix = "[" + i + "]";
-
-                transferPrefixIndex = "";
-                buildStatementList(o, statementList, nextPath, transferPrefixIndex, suffix, finalPath, Mode, ignoreList);
-            }
-        } else {
-            if (isParsingClass(propertyValue.getClass()) && !nextPath.equals("")) {
-                buildStatementList(propertyValue, statementList, nextPath, transferPrefixIndex, transferSuffixIndex, finalPath, Mode, ignoreList);
-            } else {
-                statementList.add(finalPath);
-            }
-        }
-        return statementList;
     }
 
     /**

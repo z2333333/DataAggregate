@@ -85,7 +85,7 @@ public class PurchaseController {
      * @param req
      * @return com.vd.canary.core.bo.ResponseBO<com.vd.canary.obmp.order.api.response.PomPurchaseContractDetailResp>
      */
-    @DataAggregate()
+    //@DataAggregate()
     @PostMapping("/info")
     public ResponseBO<PomPurchaseContractDetailResp> purchaseOrderDetail(@Valid @RequestBody PomPurchaseContractDetailReq req){
         return purchaseService.purchaseOrderDetail(req);
@@ -202,6 +202,12 @@ public class PurchaseController {
             shutReq.setReason("中台关闭采购单");
             purchaseService.shutPurchaseContract(shutReq);
         });
+        return ResponseUtil.ok();
+    }
+
+    @DataAggregate
+    @PostMapping("/test")
+    public ResponseBO<Boolean> test() {
         return ResponseUtil.ok();
     }
 }

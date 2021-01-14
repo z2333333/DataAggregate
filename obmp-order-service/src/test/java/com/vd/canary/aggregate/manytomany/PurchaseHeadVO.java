@@ -1,4 +1,4 @@
-package DataAggregate;
+package com.vd.canary.aggregate.manytomany;
 
 import com.vd.canary.obmp.order.api.operation.sale.response.ContractAddressInfoVo;
 import lombok.Data;
@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 
 @Data
 public class PurchaseHeadVO {
+
     private String purchaseContractHeadId;
 
     /**
