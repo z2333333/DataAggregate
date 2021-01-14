@@ -73,6 +73,7 @@ public class PurchaseController {
      * @param purchaseOrderListReq
      * @return com.vd.canary.core.bo.ResponsePageBO<com.vd.canary.obmp.order.api.response.PurchaseOrderListResp>
      */
+    @DataAggregate()
     @PostMapping("/list")
     public ResponsePageBO<PurchaseOrderListResp> purchaseOrderList(@Valid @RequestBody PurchaseOrderListReq purchaseOrderListReq){
         return purchaseService.purchaseOrderList(purchaseOrderListReq);
