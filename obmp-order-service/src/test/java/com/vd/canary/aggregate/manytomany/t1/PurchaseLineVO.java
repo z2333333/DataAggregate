@@ -6,6 +6,7 @@ import lombok.Data;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * <p>
@@ -68,4 +69,6 @@ public class PurchaseLineVO implements Serializable {
 
     private String testProperty1;
     private String testProperty2;
+
+    private List<OrderFileBillVO> orderFileBillVOs;
 }

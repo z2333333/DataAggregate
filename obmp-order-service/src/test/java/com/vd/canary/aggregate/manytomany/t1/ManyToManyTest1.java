@@ -17,6 +17,7 @@ import static org.junit.Assert.assertNotNull;
  * 1.指定多个执行器(在相同属性中)
  * 2.绑定属性位于嵌套容器中
  * 3.执行器反写时为多对多关系
+ * 4.返回对象为List<VO>类型
  *
  * @author zx
  * @date 2021/1/14 16:23
@@ -50,6 +51,12 @@ public class ManyToManyTest1 {
         assertNotNull(responseBO.getData().getPomPurchaseContractLineList().get(1).getTestProperty1());
         assertEquals("我是商品Id:1342294065481666561的辅助单位",responseBO.getData().getPomPurchaseContractLineList().get(1).getTestProperty1());
         assertEquals("我是商品Id:1342294065481666561的辅助数量",responseBO.getData().getPomPurchaseContractLineList().get(1).getTestProperty2());
+
+        assertNotNull(responseBO.getData().getPomPurchaseContractLineList().get(0).getOrderFileBillVOs());
+        assertEquals("1342294065443917826",responseBO.getData().getPomPurchaseContractLineList().get(0).getOrderFileBillVOs().get(0).getBillId());
+
+        assertNotNull(responseBO.getData().getPomPurchaseContractLineList().get(1).getOrderFileBillVOs());
+        assertEquals("1342294065481666561",responseBO.getData().getPomPurchaseContractLineList().get(1).getOrderFileBillVOs().get(0).getBillId());
     }
 
 
