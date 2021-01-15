@@ -13,7 +13,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.annotation.Transient;
 
 import javax.annotation.Resource;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -32,7 +31,7 @@ public class OrderFileSeparateActuator extends AbstractOrderDataAggregate {
     private String fillId;
     @Transient
     private String businessType;
-    private List<OrderFileBillVO> orderFileBillVOs = new ArrayList<>();
+    private List<OrderFileBillVO> orderFileBillVOs;
 
     @Override
     public void doDataAggregate(Object... args) {
