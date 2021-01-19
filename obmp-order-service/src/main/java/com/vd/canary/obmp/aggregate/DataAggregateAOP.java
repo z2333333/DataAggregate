@@ -352,10 +352,6 @@ public class DataAggregateAOP {
      * @param aggregateTargetNode
      * @return
      * @throws ClassNotFoundException
-     * @throws NoSuchMethodException
-     * @throws IllegalAccessException
-     * @throws InvocationTargetException
-     * @throws InstantiationException
      * @author zhengxin
      */
     private AggregateTargetNode parsingClass(StringBuffer absolutePathName, Class<?> clazz, AggregateTargetNode aggregateTargetNode) throws ClassNotFoundException {
@@ -378,7 +374,7 @@ public class DataAggregateAOP {
                     sourceClass = sourceClassList.toArray(new Class[sourceClassList.size()]);
                 }
             }
-            //解析聚合执行器注解
+            //解析执行器属性
             for (Class source : sourceClass) {
                 if (!AggregateSourceMap.containsKey(source.getName())) {
                     AggregateSourceNode sourceNode = new AggregateSourceNode(source);
@@ -446,9 +442,6 @@ public class DataAggregateAOP {
             if (field.isAnnotationPresent(DataAggregatePropertyBind.class)) {
                 String bindName = field.getAnnotation(DataAggregatePropertyBind.class).value();
 
-                //构建取值执行语句
-                //todo 这里有问题,取值语句在第一次解析class时构建,后续的对象值发生变化后就不适用了(放到line67可行吗?)
-                //List buildStatementList = buildStatementList(resultObj, new ArrayList(), nextPathName, "", "read", new ArrayList<>());
                 //todo 绑定执行器的相对属性名如重复可以为类名.属性名
                 String bindSourceClassName = "DEFAULT_CLASS_NAME";
                 String bindSourcePropertyName;
