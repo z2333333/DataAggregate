@@ -723,8 +723,8 @@ public class PurchaseServiceImpl implements PurchaseService {
 
         //毛利率与毛利额
         //同个采购单当前在相同二级类目下
-        //setGrossProfit(pomPurchaseContractHeadVO, pomPurchaseContractLines);
-        //setTextureOfMaterial(pomPurchaseContractLineVOList);
+        setGrossProfit(pomPurchaseContractHeadVO, pomPurchaseContractLines);
+        setTextureOfMaterial(pomPurchaseContractLineVOList);
 
         resp.setPomPurchaseContractHeadVO(pomPurchaseContractHeadVO);
         resp.setPomPurchaseContractLineList(pomPurchaseContractLineVOList);

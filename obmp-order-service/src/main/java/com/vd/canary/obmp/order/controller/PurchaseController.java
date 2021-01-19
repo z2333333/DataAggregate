@@ -3,7 +3,6 @@ package com.vd.canary.obmp.order.controller;
 import com.vd.canary.core.bo.ResponseBO;
 import com.vd.canary.core.bo.ResponsePageBO;
 import com.vd.canary.core.util.ResponseUtil;
-import com.vd.canary.obmp.aggregate.annotation.DataAggregate;
 import com.vd.canary.obmp.order.api.request.*;
 import com.vd.canary.obmp.order.api.request.order.PomPurchaseContractSignReq;
 import com.vd.canary.obmp.order.api.request.order.PomPurchaseContractUpdateReq;
@@ -73,7 +72,7 @@ public class PurchaseController {
      * @param purchaseOrderListReq
      * @return com.vd.canary.core.bo.ResponsePageBO<com.vd.canary.obmp.order.api.response.PurchaseOrderListResp>
      */
-    @DataAggregate()
+    //@DataAggregate()
     @PostMapping("/list")
     public ResponsePageBO<PurchaseOrderListResp> purchaseOrderList(@Valid @RequestBody PurchaseOrderListReq purchaseOrderListReq){
         return purchaseService.purchaseOrderList(purchaseOrderListReq);
@@ -163,7 +162,7 @@ public class PurchaseController {
      * @param req
      * @return com.vd.canary.core.bo.ResponseBO<com.vd.canary.obmp.order.api.response.PomPurchaseContractBriefDetailResp>
      */
-    @DataAggregate()
+    //@DataAggregate()
     @PostMapping("/briefInfo")
     public ResponseBO<List<PomPurchaseContractBriefDetailResp>> purchaseOrderBriefDetail(@Valid @RequestBody PomPurchaseContractBriefDetailReq req) {
         PomPurchaseContractBriefDetailAllReq briefDetailAllReq = BeanUtil.convert(req, PomPurchaseContractBriefDetailAllReq.class);
@@ -205,9 +204,4 @@ public class PurchaseController {
         return ResponseUtil.ok();
     }
 
-    @DataAggregate
-    @PostMapping("/test")
-    public ResponseBO<Boolean> test() {
-        return ResponseUtil.ok();
-    }
 }

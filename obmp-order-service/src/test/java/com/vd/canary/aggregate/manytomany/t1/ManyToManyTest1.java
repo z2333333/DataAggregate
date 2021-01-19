@@ -59,7 +59,15 @@ public class ManyToManyTest1 {
         assertEquals("1342294065481666561",responseBO.getData().getPomPurchaseContractLineList().get(1).getOrderFileBillVOs().get(0).getBillId());
     }
 
-
+    @Test
+    public void manyToManyTest2() {
+        //测试response中属性为null的情况
+        //todo 此时应不调用执行器
+        DataAggregateAOP dataAggregateAOP = DataAggregateInstance.getInstance();
+        ResponseBO<PurchaseDetailResp> responseBO1 = ResponseUtil.ok(new PurchaseDetailResp());
+        dataAggregateAOP.doDataAggregate(responseBO);
+        assertNotNull(responseBO.getData());
+    }
 
 
     private static String text ="{\n" +
