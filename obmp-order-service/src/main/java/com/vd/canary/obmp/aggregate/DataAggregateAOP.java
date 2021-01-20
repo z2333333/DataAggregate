@@ -478,6 +478,50 @@ public class DataAggregateAOP {
         return aggregateTargetNode;
     }
 
+    private AggregateSourceNode parsingClass(StringBuffer absolutePathName, Class<?> clazz, AggregateSourceNode sourceNode) throws ClassNotFoundException {
+            //解析执行器属性
+                    for (Field sourceField : clazz.getDeclaredFields()) {
+                        if (isIgnoreField(sourceField)) {
+                            continue;
+                        }
+
+                        Class<?> propertyTypeClass = sourceField.getType();
+                        String nextPathName = absolutePathName.toString() + "." + sourceField.getName();
+                        nextPathName = nextPathName.charAt(0) == '.' ? nextPathName.substring(1) : nextPathName;
+
+                        if (sourceField.isAnnotationPresent(org.springframework.data.annotation.Transient.class)) {
+                            //解析@Transient
+                        } else if (sourceField.isAnnotationPresent(javax.annotation.Resource.class)) {
+                            Map<String, ?> beans = applicationContext.getBeansOfType(sourceField.getType());
+                            Object springBean = null;
+                            try {
+                                //todo 存在多个实现时用@quir注解直接指定名字注入的情况
+                                springBean = beans.entrySet().iterator().next().getValue();
+                            } catch (Exception e) {
+                                log.error("数据聚合-解析执行器自动注入属性失败,执行器={},属性={}", clazz.getName(), sourceField.getName());
+                                throw new BusinessException(120_000, "解析执行器自动注入属性失败");
+                            }
+
+                            if (springBean != null) {
+                                sourceNode.resourcePropertyMap.put(sourceField.getName(), springBean);
+                            }
+                        } else {
+                            sourceNode.allowPropertyList.add(sourceField.getName());
+                        }
+                        sourceNode.propertyAggregateMap.put(sourceField.getName(), findTar(clazz, sourceField.getName()));
+                    }
+                    AggregateSourceMap.put(clazz, sourceNode);
+
+                String targetPropertyName = absolutePathName.toString().equals("") ? "~" : absolutePathName.toString();
+                targetPropertyName = targetPropertyName.charAt(0) == '.' ? targetPropertyName.substring(1) : targetPropertyName;
+                //设置解析对象待执行器
+                if (!aggregateTargetNode.propertyAggregateMap.containsKey(targetPropertyName)) {
+                    aggregateTargetNode.propertyAggregateMap.put(targetPropertyName, new ArrayList<>(Arrays.asList(AggregateSourceMap.get(clazz))));
+                } else {
+                    aggregateTargetNode.propertyAggregateMap.get(targetPropertyName).add(AggregateSourceMap.get(clazz));
+                }
+    }
+
     /**
      * 从实际可访问路径中匹配执行器中待反写的属性对应的访问路径
      *
