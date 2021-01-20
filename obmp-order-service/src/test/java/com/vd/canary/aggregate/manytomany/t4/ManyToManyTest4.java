@@ -152,7 +152,7 @@ public class ManyToManyTest4 {
     }
 
     @Test
-    public void manyToManyTest1() {
+    public void manyToManyTest4() {
         DataAggregateAOP dataAggregateAOP = DataAggregateInstance.getInstance();
         dataAggregateAOP.doDataAggregate(responseBO);
         assertNotNull(responseBO.getData());
