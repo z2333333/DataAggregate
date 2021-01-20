@@ -20,8 +20,8 @@ public class PurchaseDetailResp implements Serializable {
 	/**
 	 * 采购订单信息
 	 */
-	//@ApiModelProperty(value = "采购订单信息")
-	//private PurchaseHeadVO pomPurchaseContractHeadVO;
+	@ApiModelProperty(value = "采购订单信息")
+	private PurchaseHeadVO pomPurchaseContractHeadVO;
 
 	/**
 	 * 销售订单明细表
