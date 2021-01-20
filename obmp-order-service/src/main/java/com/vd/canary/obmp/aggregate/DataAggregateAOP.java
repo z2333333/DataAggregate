@@ -111,9 +111,9 @@ public class DataAggregateAOP {
             String curTargetPropertyName = targetPropertyEntry.getKey();
             //遍历每个属性绑定的所有执行器
             for (AggregateSourceNode sourceNode : targetPropertyEntry.getValue()) {
-                List<OrderDataAggregate> instances = new ArrayList();
-                Map<String, String> classMap = targetNode.bindPropertyMap.get(sourceNode.sourceClass.getName());
-                Map<String, String> defaultClassMap = targetNode.bindPropertyMap.get("DEFAULT_CLASS_NAME");
+                List<AbstractOrderDataAggregate> instances = new ArrayList();
+                Map<String, AggregateTargetBindProperty> classMap = targetNode.bindPropertyMap.get(sourceNode.sourceClass.getName());
+                Map<String, AggregateTargetBindProperty> defaultClassMap = targetNode.bindPropertyMap.get("DEFAULT_CLASS_NAME");
 
                 //遍历执行器的属性,如果属性在聚合对象中存在绑定关系,则从聚合对象中获取对应的值注入到执行器中的属性
                 for (Map.Entry<String, PropertyDescriptor> entry : sourceNode.propertyAggregateMap.entrySet()) {
@@ -125,7 +125,7 @@ public class DataAggregateAOP {
                     }
                     Method writeMethod = entry.getValue().getWriteMethod();
                     List<String> buildStatementList = null;
-                    String tarProperty;
+                    AggregateTargetBindProperty tarProperty;
 
                     //从聚合对象解析关系中获取对应属性的属性平铺路径(理论访问路径)
                     if (classMap != null && classMap.containsKey(sourcePropertyName)) {
@@ -134,9 +134,9 @@ public class DataAggregateAOP {
                         tarProperty = defaultClassMap == null ? null : defaultClassMap.get(sourcePropertyName);
                     }
 
-                    if (tarProperty != null) {
+                    if (tarProperty != null && tarProperty.getAggregateTargetPropertyName() != null) {
                         //从属性理论访问路径构建实际访问路径
-                        buildStatementList = buildStatementList(responseData, new ArrayList(), tarProperty, "", "", "", "read", new ArrayList<>());
+                        buildStatementList = buildStatementList(responseData, new ArrayList(), tarProperty.getAggregateTargetPropertyName(), "", "", "", "read", new ArrayList<>());
                     }
                     //todo 先不考虑执行器的属性绑定跨层的情况
                     //注入依赖值
@@ -153,27 +153,24 @@ public class DataAggregateAOP {
                             if (instances.size() == 1) {
                                 //todo 深clone方式
                                 for (int i = 1; i < size; i++) {
-                                    //OrderDataAggregate orderDataAggregate = (OrderDataAggregate) sourceNode.sourceClass.getDeclaredConstructor().newInstance();
                                     instances.add(getOrderDataAggregateInstance(sourceNode));
                                 }
                             }
                             for (int i = 0; i < size; i++) {
-                                String statementIndex = buildStatementList.get(i);
-                                OrderDataAggregate orderDataAggregateIndex = instances.get(i);
-                                Object propertyValue = PropertyUtils.getProperty(responseData, statementIndex);
-                                //todo 参数类型不匹配的情况
-                                writeMethod.invoke(orderDataAggregateIndex, propertyValue);
+                                setActuatorProperty(responseData, writeMethod, tarProperty, buildStatementList.get(i), instances.get(i));
                             }
                         } else {
-                            Object propertyValue = PropertyUtils.getProperty(responseData, buildStatementList.get(0));
-                            writeMethod.invoke(instances.get(0), propertyValue);
+                            setActuatorProperty(responseData, writeMethod, tarProperty, buildStatementList.get(0), instances.get(0));
                         }
                     }
                 }
 
                 for (int i = 0; i < instances.size(); i++) {
-                    OrderDataAggregate dataAggregate = instances.get(i);
+                    AbstractOrderDataAggregate dataAggregate = instances.get(i);
                     //执行聚合方法 todo 代理
+                    if (!dataAggregate.isActuatorFlag()) {
+                        continue;
+                    }
                     dataAggregate.doDataAggregate();
 
                     //数据反写
@@ -221,6 +218,19 @@ public class DataAggregateAOP {
                     }
                 }
             }
+        }
+    }
+
+    private void setActuatorProperty(Object responseData, Method writeMethod, AggregateTargetBindProperty tarProperty, String statementIndex, AbstractOrderDataAggregate orderDataAggregateIndex) throws IllegalAccessException, InvocationTargetException, NoSuchMethodException {
+        Object propertyValue = PropertyUtils.getProperty(responseData, statementIndex);
+        if (propertyValue == null) {
+            if (tarProperty.isRequired()) {
+                //执行器中该属性为必要
+                orderDataAggregateIndex.setActuatorFlag(false);
+            }
+        } else {
+            //todo 参数类型不匹配的情况
+            writeMethod.invoke(orderDataAggregateIndex, propertyValue);
         }
     }
 
@@ -311,7 +321,7 @@ public class DataAggregateAOP {
         if (propertyValue instanceof List) {
             List sourceList = (List) propertyValue;
             //聚合对象中List属性对象长度为0的情况(自行初始化或执行器反写)
-            if (sourceList.size() == 0 && !statementList.contains(finalPath)) {
+            if (sourceList.size() == 0 && !statementList.contains(finalPath) && Mode.equals("write")) {
                 statementList.add(finalPath);
             }
             for (int i = 0; i < sourceList.size(); i++) {
@@ -377,34 +387,34 @@ public class DataAggregateAOP {
             //解析执行器属性
             for (Class source : sourceClass) {
                 if (!AggregateSourceMap.containsKey(source.getName())) {
-                    AggregateSourceNode sourceNode = new AggregateSourceNode(source);
-
-                    for (Field sourceField : source.getDeclaredFields()) {
-                        if (isIgnoreField(sourceField)) {
-                            continue;
-                        }
-
-                        if (sourceField.isAnnotationPresent(org.springframework.data.annotation.Transient.class)) {
-                            //解析@Transient
-                        } else if (sourceField.isAnnotationPresent(javax.annotation.Resource.class)) {
-                            Map<String, ?> beans = applicationContext.getBeansOfType(sourceField.getType());
-                            Object springBean = null;
-                            try {
-                                //todo 存在多个实现时用@quir注解直接指定名字注入的情况
-                                springBean = beans.entrySet().iterator().next().getValue();
-                            } catch (Exception e) {
-                                log.error("数据聚合-解析执行器自动注入属性失败,执行器={},属性={}", source.getName(), sourceField.getName());
-                                throw new BusinessException(120_000, "解析执行器自动注入属性失败");
-                            }
-
-                            if (springBean != null) {
-                                sourceNode.resourcePropertyMap.put(sourceField.getName(), springBean);
-                            }
-                        } else {
-                            sourceNode.allowPropertyList.add(sourceField.getName());
-                        }
-                        sourceNode.propertyAggregateMap.put(sourceField.getName(), findTar(source, sourceField.getName()));
-                    }
+                    AggregateSourceNode sourceNode = parsingClass(new StringBuffer(), source, new AggregateSourceNode(source));
+                    //AggregateSourceNode sourceNode = new AggregateSourceNode(source);
+//                    for (Field sourceField : source.getDeclaredFields()) {
+//                        if (isIgnoreField(sourceField)) {
+//                            continue;
+//                        }
+//
+//                        if (sourceField.isAnnotationPresent(org.springframework.data.annotation.Transient.class)) {
+//                            //解析@Transient
+//                        } else if (sourceField.isAnnotationPresent(javax.annotation.Resource.class)) {
+//                            Map<String, ?> beans = applicationContext.getBeansOfType(sourceField.getType());
+//                            Object springBean = null;
+//                            try {
+//                                //todo 存在多个实现时用@quir注解直接指定名字注入的情况
+//                                springBean = beans.entrySet().iterator().next().getValue();
+//                            } catch (Exception e) {
+//                                log.error("数据聚合-解析执行器自动注入属性失败,执行器={},属性={}", source.getName(), sourceField.getName());
+//                                throw new BusinessException(120_000, "解析执行器自动注入属性失败");
+//                            }
+//
+//                            if (springBean != null) {
+//                                sourceNode.resourcePropertyMap.put(sourceField.getName(), springBean);
+//                            }
+//                        } else {
+//                            sourceNode.allowPropertyList.add(sourceField.getName());
+//                        }
+//                        sourceNode.propertyAggregateMap.put(sourceField.getName(), findTar(source, sourceField.getName()));
+//                    }
                     AggregateSourceMap.put(source, sourceNode);
                 }
 
@@ -440,7 +450,8 @@ public class DataAggregateAOP {
 
             //解析聚合属性绑定注解
             if (field.isAnnotationPresent(DataAggregatePropertyBind.class)) {
-                String bindName = field.getAnnotation(DataAggregatePropertyBind.class).value();
+                DataAggregatePropertyBind dataAggregatePropertyBind = field.getAnnotation(DataAggregatePropertyBind.class);
+                String bindName = dataAggregatePropertyBind.value();
 
                 //todo 绑定执行器的相对属性名如重复可以为类名.属性名
                 String bindSourceClassName = "DEFAULT_CLASS_NAME";
@@ -457,15 +468,16 @@ public class DataAggregateAOP {
                     bindSourcePropertyName = bindName;
                 }
 
+                AggregateTargetBindProperty aggregateTargetBindProperty = new AggregateTargetBindProperty(bindSourcePropertyName, nextPathName, dataAggregatePropertyBind.required());
                 if (aggregateTargetNode.bindPropertyMap.containsKey(bindSourceClassName)) {
-                    Map<String, String> listMap = aggregateTargetNode.bindPropertyMap.get(bindSourceClassName);
+                    Map<String, AggregateTargetBindProperty> listMap = aggregateTargetNode.bindPropertyMap.get(bindSourceClassName);
                     if (listMap.get(bindSourcePropertyName) != null) {
                         throw new RuntimeException("数据聚合-聚合对象中绑定执行器属性重复");
                     }
-                    aggregateTargetNode.bindPropertyMap.get(bindSourceClassName).put(bindSourcePropertyName, nextPathName);
+                    aggregateTargetNode.bindPropertyMap.get(bindSourceClassName).put(bindSourcePropertyName, aggregateTargetBindProperty);
                 } else {
-                    Map<String, String> listMap = new HashMap<>();
-                    listMap.put(bindSourcePropertyName, nextPathName);
+                    Map<String, AggregateTargetBindProperty> listMap = new HashMap<>();
+                    listMap.put(bindSourcePropertyName, aggregateTargetBindProperty);
                     aggregateTargetNode.bindPropertyMap.put(bindSourceClassName, listMap);
                 }
             }
@@ -479,47 +491,42 @@ public class DataAggregateAOP {
     }
 
     private AggregateSourceNode parsingClass(StringBuffer absolutePathName, Class<?> clazz, AggregateSourceNode sourceNode) throws ClassNotFoundException {
-            //解析执行器属性
-                    for (Field sourceField : clazz.getDeclaredFields()) {
-                        if (isIgnoreField(sourceField)) {
-                            continue;
-                        }
+        //解析执行器属性
+        for (Field sourceField : clazz.getDeclaredFields()) {
+            if (isIgnoreField(sourceField)) {
+                continue;
+            }
 
-                        Class<?> propertyTypeClass = sourceField.getType();
-                        String nextPathName = absolutePathName.toString() + "." + sourceField.getName();
-                        nextPathName = nextPathName.charAt(0) == '.' ? nextPathName.substring(1) : nextPathName;
+            Class<?> propertyTypeClass = sourceField.getType();
+            String nextPathName = absolutePathName.toString() + "." + sourceField.getName();
+            nextPathName = nextPathName.charAt(0) == '.' ? nextPathName.substring(1) : nextPathName;
 
-                        if (sourceField.isAnnotationPresent(org.springframework.data.annotation.Transient.class)) {
-                            //解析@Transient
-                        } else if (sourceField.isAnnotationPresent(javax.annotation.Resource.class)) {
-                            Map<String, ?> beans = applicationContext.getBeansOfType(sourceField.getType());
-                            Object springBean = null;
-                            try {
-                                //todo 存在多个实现时用@quir注解直接指定名字注入的情况
-                                springBean = beans.entrySet().iterator().next().getValue();
-                            } catch (Exception e) {
-                                log.error("数据聚合-解析执行器自动注入属性失败,执行器={},属性={}", clazz.getName(), sourceField.getName());
-                                throw new BusinessException(120_000, "解析执行器自动注入属性失败");
-                            }
-
-                            if (springBean != null) {
-                                sourceNode.resourcePropertyMap.put(sourceField.getName(), springBean);
-                            }
-                        } else {
-                            sourceNode.allowPropertyList.add(sourceField.getName());
-                        }
-                        sourceNode.propertyAggregateMap.put(sourceField.getName(), findTar(clazz, sourceField.getName()));
-                    }
-                    AggregateSourceMap.put(clazz, sourceNode);
-
-                String targetPropertyName = absolutePathName.toString().equals("") ? "~" : absolutePathName.toString();
-                targetPropertyName = targetPropertyName.charAt(0) == '.' ? targetPropertyName.substring(1) : targetPropertyName;
-                //设置解析对象待执行器
-                if (!aggregateTargetNode.propertyAggregateMap.containsKey(targetPropertyName)) {
-                    aggregateTargetNode.propertyAggregateMap.put(targetPropertyName, new ArrayList<>(Arrays.asList(AggregateSourceMap.get(clazz))));
-                } else {
-                    aggregateTargetNode.propertyAggregateMap.get(targetPropertyName).add(AggregateSourceMap.get(clazz));
+            if (sourceField.isAnnotationPresent(org.springframework.data.annotation.Transient.class)) {
+                //解析@Transient
+            } else if (sourceField.isAnnotationPresent(javax.annotation.Resource.class)) {
+                Map<String, ?> beans = applicationContext.getBeansOfType(sourceField.getType());
+                Object springBean = null;
+                try {
+                    //todo 存在多个实现时用@quir注解直接指定名字注入的情况
+                    springBean = beans.entrySet().iterator().next().getValue();
+                } catch (Exception e) {
+                    log.error("数据聚合-解析执行器自动注入属性失败,执行器={},属性={}", clazz.getName(), sourceField.getName());
+                    throw new BusinessException(120_000, "解析执行器自动注入属性失败");
                 }
+
+                if (springBean != null) {
+                    sourceNode.resourcePropertyMap.put(sourceField.getName(), springBean);
+                }
+            } else {
+                sourceNode.allowPropertyList.add(sourceField.getName());
+            }
+            sourceNode.propertyAggregateMap.put(sourceField.getName(), findTar(clazz, sourceField.getName()));
+
+            if (isParsingClass(propertyTypeClass)) {
+                parsingClass(new StringBuffer(absolutePathName.toString() + "." + sourceField.getName()), propertyTypeClass, sourceNode);
+            }
+        }
+        return sourceNode;
     }
 
     /**
@@ -657,7 +664,7 @@ public class DataAggregateAOP {
         }
     }
 
-    private OrderDataAggregate getOrderDataAggregateInstance(AggregateSourceNode sourceNode) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
+    private AbstractOrderDataAggregate getOrderDataAggregateInstance(AggregateSourceNode sourceNode) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
         AbstractOrderDataAggregate orderDataAggregate = (AbstractOrderDataAggregate) sourceNode.sourceClass.getDeclaredConstructor().newInstance();
         Map<Method, Object> initMap = new HashMap<>();
         for (Map.Entry<String, Object> classEntry : sourceNode.resourcePropertyMap.entrySet()) {
@@ -709,8 +716,8 @@ public class DataAggregateAOP {
         //todo 弱引用map
         final Map<String, List<AggregateSourceNode>> propertyAggregateMap = new HashMap<>();
 
-        //key 属性执行器类名 val <key 绑定的属性执行器中的相对属性名 val 聚合对象相对属性名>
-        final Map<String, Map<String, String>> bindPropertyMap = new HashMap<>();
+        //key 执行器类名(default或执行器类名) val <key 绑定的执行器中的相对属性名 val 聚合对象相对属性名>
+        final Map<String, Map<String, AggregateTargetBindProperty>> bindPropertyMap = new HashMap<>();
 
         public AggregateTargetNode() {
         }
@@ -718,8 +725,6 @@ public class DataAggregateAOP {
         public void initAggregateNode() {
 
         }
-
-
     }
 
     static class AggregateSourceNode {
@@ -736,6 +741,32 @@ public class DataAggregateAOP {
         public AggregateSourceNode(Class<?> sourceClass) {
             this.sourceClass = sourceClass;
         }
+    }
 
+    static class AggregateTargetBindProperty {
+        //绑定的执行器中的相对属性名
+        private final String actuatorPropertyName;
+        //聚合对象相对属性名
+        private final String aggregateTargetPropertyName;
+        //标示绑定到执行器的属性是否必要
+        private final boolean required;
+
+        public AggregateTargetBindProperty(String v1, String v2, boolean v3) {
+            this.actuatorPropertyName = v1;
+            this.aggregateTargetPropertyName = v2;
+            this.required = v3;
+        }
+
+        public String getActuatorPropertyName() {
+            return actuatorPropertyName;
+        }
+
+        public String getAggregateTargetPropertyName() {
+            return aggregateTargetPropertyName;
+        }
+
+        public boolean isRequired() {
+            return required;
+        }
     }
 }
