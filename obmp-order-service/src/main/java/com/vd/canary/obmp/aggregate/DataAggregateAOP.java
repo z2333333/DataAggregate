@@ -452,12 +452,13 @@ public class DataAggregateAOP {
                 //解析聚合对象属性绑定注解
                 targetNode.propertyList.add(nextPathName);
 
+                String bindSourcePropertyName = "";
                 String bindSourceClassName = "DEFAULT_CLASS_NAME";
+                AggregateTargetBindProperty aggregateTargetBindProperty = null;
                 if (field.isAnnotationPresent(DataAggregatePropertyBind.class)) {
                     DataAggregatePropertyBind propertyBind = field.getAnnotation(DataAggregatePropertyBind.class);
                     String bindName = propertyBind.value();
-                    //todo 绑定执行器的相对属性名如重复可以为类名.属性名
-                    String bindSourcePropertyName;
+                    //todo 绑定执行器的相对属性名如重复可以为类名.属性名,如果存在同名class如何处理(全限定类名不好截断)
                     int index = bindName.indexOf(".");
                     if (index > 0) {
                         //类名.属性名的情况
@@ -470,19 +471,8 @@ public class DataAggregateAOP {
                         bindSourcePropertyName = bindName;
                     }
 
+                    aggregateTargetBindProperty = new AggregateTargetBindProperty(bindSourcePropertyName, nextPathName, propertyBind.required(), false);
 
-                    AggregateTargetBindProperty aggregateTargetBindProperty = new AggregateTargetBindProperty(bindSourcePropertyName, nextPathName, propertyBind.required(), false);
-                    if (targetNode.bindPropertyMap.containsKey(bindSourceClassName)) {
-                        Map<String, AggregateTargetBindProperty> listMap = targetNode.bindPropertyMap.get(bindSourceClassName);
-                        if (listMap.get(bindSourcePropertyName) != null) {
-                            throw new RuntimeException("数据聚合-聚合对象中绑定执行器属性重复");
-                        }
-                        targetNode.bindPropertyMap.get(bindSourceClassName).put(bindSourcePropertyName, aggregateTargetBindProperty);
-                    } else {
-                        Map<String, AggregateTargetBindProperty> listMap = new HashMap<>();
-                        listMap.put(bindSourcePropertyName, aggregateTargetBindProperty);
-                        targetNode.bindPropertyMap.put(bindSourceClassName, listMap);
-                    }
                 } else if (field.isAnnotationPresent(DataAggregatePropertyMapping.class)) {
                     DataAggregatePropertyMapping propertyMapping = field.getAnnotation(DataAggregatePropertyMapping.class);
                     String value = propertyMapping.value();
@@ -493,22 +483,30 @@ public class DataAggregateAOP {
                     if (!mappingClass.equals(Object.class)) {
                         bindSourceClassName = mappingClass.getName();
                     } else if (Character.isUpperCase(value.charAt(0))) {
-                        bindSourceClassName = cutOutPath[1].substring(1);
+                        value = cutOutPath[1].substring(1);
+                        bindSourceClassName = cutOutPath[0];
                     } else if (!"".equals(classNameStr)) {
                         bindSourceClassName = classNameStr;
                     }
 
-//                    if (tarSourceNode != null) {
-//                        //执行器属性冲突的情况
-//
-//                    }
-
-                    AggregateTargetBindProperty aggregateTargetBindProperty = new AggregateTargetBindProperty(value, nextPathName, true, true);
-
+                    bindSourcePropertyName = value;
+                    aggregateTargetBindProperty = new AggregateTargetBindProperty(value, nextPathName, true, true);
                 }
 
-
-
+                if (!bindSourcePropertyName.equals("") && aggregateTargetBindProperty != null) {
+                    if (targetNode.bindPropertyMap.containsKey(bindSourceClassName)) {
+                        Map<String, AggregateTargetBindProperty> listMap = targetNode.bindPropertyMap.get(bindSourceClassName);
+                        if (listMap.get(bindSourcePropertyName) != null) {
+                            log.error("数据聚合-解析聚合对象异常,无效的绑定属性,class={},property={}", clazz.getName(), nextPathName);
+                            throw new BusinessException(120_000, "数据聚合-聚合对象中绑定执行器属性重复");
+                        }
+                        targetNode.bindPropertyMap.get(bindSourceClassName).put(bindSourcePropertyName, aggregateTargetBindProperty);
+                    } else {
+                        Map<String, AggregateTargetBindProperty> listMap = new HashMap<>();
+                        listMap.put(bindSourcePropertyName, aggregateTargetBindProperty);
+                        targetNode.bindPropertyMap.put(bindSourceClassName, listMap);
+                    }
+                }
             }
 
             if (isParsingClass(propertyTypeClass)) {
