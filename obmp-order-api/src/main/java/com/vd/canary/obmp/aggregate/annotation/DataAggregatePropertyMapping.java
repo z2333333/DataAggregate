@@ -25,7 +25,7 @@ public @interface DataAggregatePropertyMapping {
 
     /**
      * 标示映射属性所在的执行器
-     * 起标示作用,实际解析时如value指定了全限定路径则该属性无效
+     * 起标示作用,可为空,与value共同定义标记
      * @return
      */
     Class<?> className() default Object.class;
