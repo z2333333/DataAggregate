@@ -1,4 +1,4 @@
-package com.vd.canary.aggregate.manytomany.t4;
+package com.vd.canary.aggregate.manytoone.t1;
 
 import com.vd.canary.obmp.aggregate.annotation.DataAggregatePropertyBind;
 import com.vd.canary.obmp.aggregate.annotation.DataAggregatePropertyMapping;
@@ -28,7 +28,7 @@ public class PurchaseLineVO implements Serializable {
      * 采购订单行ID
      */
     @DataAggregatePropertyBind("skuId")
-    @DataAggregatePropertyMapping("orderSkuInfos.skuInfoVOS.skuId")
+    @DataAggregatePropertyMapping(className = OrderLineSkuInfoActuator.class, value = "orderSkuInfos.skuInfoVOS.skuId")
     private String purchaseContractLineId;
 
     /**

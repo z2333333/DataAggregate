@@ -6,6 +6,9 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
+ * 属性绑定标记直接
+ * 将所注解的属性绑定到执行器对应属性
+ * 多个执行器存在相同属性名时以执行器类名.属性区分
  * @author zx
  * @date 2020/12/16 13:43
  */

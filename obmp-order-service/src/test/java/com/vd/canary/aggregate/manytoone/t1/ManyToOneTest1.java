@@ -1,4 +1,4 @@
-package com.vd.canary.aggregate.manytomany.t4;
+package com.vd.canary.aggregate.manytoone.t1;
 
 import com.alibaba.fastjson.JSON;
 import com.vd.canary.aggregate.DataAggregateInstance;
@@ -18,7 +18,7 @@ import static org.junit.Assert.assertNotNull;
  * @author zx
  * @date 2021/1/14 16:23
  */
-public class ManyToManyTest4 {
+public class ManyToOneTest1 {
     private static ResponseBO<PurchaseDetailResp> responseBO;
     private static String text ="{\n" +
             "\t\t\"pomPurchaseContractHeadVO\": {\n" +
@@ -152,7 +152,7 @@ public class ManyToManyTest4 {
     }
 
     @Test
-    public void manyToManyTest4() {
+    public void manyToManyTest1() {
         DataAggregateAOP dataAggregateAOP = DataAggregateInstance.getInstance();
         dataAggregateAOP.doDataAggregate(responseBO);
         assertNotNull(responseBO.getData());

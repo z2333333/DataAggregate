@@ -6,6 +6,8 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
+ * 属性映射标记注解
+ * 仅在聚合对象-执行器N:1时启用
  * @author zx
  * @date 2021/1/19 15:16
  */
@@ -13,8 +15,22 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface DataAggregatePropertyMapping {
     //todo 当前是写死的,属性名发生变化后编译期里无法发现,hutool里好像有对字段引用的包装类
+
+    /**
+     * 执行器中返回值映射到聚合对象的标记
+     * 多个执行器存在相同属性名时以执行器类名.属性区分或指定className属性
+     * @return
+     */
     String value();
 
+    /**
+     * 标示映射属性所在的执行器
+     * 起标示作用,实际解析时如value指定了全限定路径则该属性无效
+     * @return
+     */
+    Class<?> className() default Object.class;
+
+    String classNameStr() default "";
 //    /* 二选一 */
 //
 //    /**
