@@ -137,6 +137,11 @@ public class DataAggregateAOP {
                     }
 
                     if (tarProperty != null && tarProperty.getAggregateTargetPropertyName() != null) {
+                        if (tarProperty.mappingProperty && !sourceNode.isSingleton()) {
+                            //设置对应的执行器为多对一模式
+                            sourceNode.setSingleton(true);
+                        }
+
                         //从属性理论访问路径构建实际访问路径
                         buildStatementList = buildStatementList(responseData, new ArrayList(), tarProperty.getAggregateTargetPropertyName(), "", "", "", "read", new ArrayList<>());
                     }
