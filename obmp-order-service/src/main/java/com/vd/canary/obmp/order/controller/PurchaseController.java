@@ -12,6 +12,7 @@ import com.vd.canary.obmp.order.api.response.vo.order.PomPurchaseContractHistory
 import com.vd.canary.obmp.order.service.order.PurchaseService;
 import com.vd.canary.utils.BeanUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -40,6 +41,7 @@ public class PurchaseController {
      * @return com.vd.canary.core.bo.ResponseBO<com.vd.canary.obmp.order.api.response.vo.order.PomPurchaseContractGenerateResp>
      */
     @PostMapping("/update")
+    @Transactional
     public ResponseBO<PomPurchaseContractGenerateResp> updatePurchaseContract(@Valid @RequestBody PomPurchaseContractUpdateReq req){
         return purchaseService.updatePurchaseContract(req);
     }

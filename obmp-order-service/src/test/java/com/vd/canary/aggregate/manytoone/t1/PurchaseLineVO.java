@@ -27,20 +27,18 @@ public class PurchaseLineVO implements Serializable {
     /**
      * 采购订单行ID
      */
-    @DataAggregatePropertyBind("skuId")
+    @DataAggregatePropertyBind(value = "skuReq.skuIdList",type = DataAggregatePropertyBind.BindType.MANY_TO_ONE)
     @DataAggregatePropertyMapping(className = OrderLineSkuInfoActuator.class, value = "orderSkuInfos.skuInfoVOS.skuId")
     private String purchaseContractLineId;
 
     /**
      *  税率 
      */
-    @DataAggregatePropertyBind("tax")
     private String taxCode;
 
     /**
      *  采购价格 
      */
-    @DataAggregatePropertyBind("orderTaxPrice")
     private BigDecimal purchasePrice;
 
     /**

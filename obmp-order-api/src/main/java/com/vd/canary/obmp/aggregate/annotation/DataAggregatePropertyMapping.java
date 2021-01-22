@@ -7,7 +7,7 @@ import java.lang.annotation.Target;
 
 /**
  * 属性映射标记注解
- * 仅在聚合对象-执行器N:1时启用
+ * 提供聚合对象与执行器属性自定义映射功能
  * @author zx
  * @date 2021/1/19 15:16
  */
@@ -31,30 +31,10 @@ public @interface DataAggregatePropertyMapping {
     Class<?> className() default Object.class;
 
     String classNameStr() default "";
-//    /* 二选一 */
-//
-//    /**
-//     * 映射执行器属性全限定类名
-//     * 适配在服务池中使用的情况
-//     * 当前架构下api层不会依赖service,在前者中无法引用后者的class
-//     *
-//     * @param
-//     * @return java.lang.String
-//     */
-//    String value() default "";
-//
-//    /**
-//     * 映射执行器类
-//     * @return
-//     */
-//    Class<?> type() default Object.class;
-//
-//    /***
-//     * 映射执行器属性对应类中的属性名
-//     * 如存在多个
-//     *
-//     * @param
-//     * @return java.lang.String
-//     */
-//    String property();
+
+    /**
+     * 聚合对象与执行器待反写属性名称不一致时可以指定别名
+     * @return
+     */
+    String alias() default "";
 }

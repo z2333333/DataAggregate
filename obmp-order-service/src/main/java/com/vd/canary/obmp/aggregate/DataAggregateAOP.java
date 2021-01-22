@@ -1,6 +1,7 @@
 package com.vd.canary.obmp.aggregate;
 
 import cn.hutool.json.JSONUtil;
+import com.sun.xml.bind.v2.TODO;
 import com.vd.canary.core.bo.ResponseBO;
 import com.vd.canary.core.bo.ResponsePageBO;
 import com.vd.canary.core.exception.BusinessException;
@@ -137,6 +138,7 @@ public class DataAggregateAOP {
                     }
 
                     if (tarProperty != null && tarProperty.getAggregateTargetPropertyName() != null) {
+                        //todo 判断条件改成bindType
                         if (tarProperty.mappingProperty && !sourceNode.isSingleton()) {
                             //设置对应的执行器为多对一模式
                             sourceNode.setSingleton(true);
@@ -155,7 +157,7 @@ public class DataAggregateAOP {
                         int size = buildStatementList.size();
                         //从多原则
                         //聚合对象与执行器1:1与n:n的情况
-                        if (buildStatementList.size() > 1) {
+                        if (size > 1) {
                             if (instances.size() == 1) {
                                 //todo 深clone方式
                                 for (int i = 1; i < size; i++) {
@@ -493,6 +495,7 @@ public class DataAggregateAOP {
                         bindSourceClassName = classNameStr;
                     }
 
+                    //todo 1.字段-在聚合对象中查找当前层级的同名字段 2.属性-查找当前层级同名属性 3.剩余字段如何处理?
                     bindSourcePropertyName = value;
                     aggregateTargetBindProperty = new AggregateTargetBindProperty(value, nextPathName, true, true);
                 }
@@ -767,11 +770,14 @@ public class DataAggregateAOP {
 
     static class AggregateTargetBindProperty {
         /**
-         * 标识属性类别
+         * 标识绑定节点类别
          * true-映射
          * false-绑定
          */
+        //todo bind和mapping可以同时出现,拆分?
         private final boolean mappingProperty;
+
+        private final DataAggregatePropertyBind.BindType bindType;
         //绑定的执行器中的相对属性名
         private final String actuatorPropertyName;
         //聚合对象相对属性名
@@ -779,11 +785,12 @@ public class DataAggregateAOP {
         //标示绑定到执行器的属性是否必要
         private final boolean required;
 
-        public AggregateTargetBindProperty(String v1, String v2, boolean v3, boolean v4) {
+        public AggregateTargetBindProperty(String v1, String v2, boolean v3, DataAggregatePropertyBind.BindType v4, boolean v5) {
             this.actuatorPropertyName = v1;
             this.aggregateTargetPropertyName = v2;
             this.required = v3;
-            this.mappingProperty = v4;
+            this.bindType = v4;
+            this.mappingProperty = v5;
         }
 
         public String getActuatorPropertyName() {
