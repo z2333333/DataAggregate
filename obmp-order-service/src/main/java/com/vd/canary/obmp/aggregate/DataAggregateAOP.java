@@ -150,7 +150,6 @@ public class DataAggregateAOP {
                     if (buildStatementList != null && buildStatementList.size() > 0) {
                         if (instances.size() == 0) {
                             instances.add(getOrderDataAggregateInstance(sourceNode));
-//                            instances.add((OrderDataAggregate) sourceNode.sourceClass.getDeclaredConstructor().newInstance());
                         }
 
                         int size = buildStatementList.size();
