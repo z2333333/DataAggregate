@@ -27,7 +27,7 @@ public @interface DataAggregatePropertyBind {
 
     /**
      * 绑定类型
-     * 默认自动解析,仅在聚合对象与执行器属性多对一时需显示指定
+     * 默认根据自动判断,仅在聚合对象与执行器属性多对一时需显示指定
      * @return
      */
     BindType type() default BindType.DEFAULT;

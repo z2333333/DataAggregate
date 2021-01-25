@@ -1,7 +1,6 @@
 package com.vd.canary.obmp.aggregate;
 
 import cn.hutool.json.JSONUtil;
-import com.sun.xml.bind.v2.TODO;
 import com.vd.canary.core.bo.ResponseBO;
 import com.vd.canary.core.bo.ResponsePageBO;
 import com.vd.canary.core.exception.BusinessException;
@@ -131,15 +130,11 @@ public class DataAggregateAOP {
                     AggregateTargetBindProperty tarProperty;
 
                     //从聚合对象解析关系中获取对应属性的属性平铺路径(理论访问路径)
-                    if (classMap != null && classMap.containsKey(sourcePropertyName)) {
-                        tarProperty = classMap.get(sourcePropertyName);
-                    } else {
-                        tarProperty = defaultClassMap == null ? null : defaultClassMap.get(sourcePropertyName);
-                    }
+                    tarProperty = targetNode.getTarBindProperty(classMap, sourcePropertyName, 0);
+                    tarProperty = tarProperty == null ? targetNode.getTarBindProperty(defaultClassMap, sourcePropertyName, 0) : tarProperty;
 
                     if (tarProperty != null && tarProperty.getAggregateTargetPropertyName() != null) {
-                        //todo 判断条件改成bindType
-                        if (tarProperty.mappingProperty && !sourceNode.isSingleton()) {
+                        if (tarProperty.getBindType().equals(DataAggregatePropertyBind.BindType.MANY_TO_ONE) && !sourceNode.isSingleton()) {
                             //设置对应的执行器为多对一模式
                             sourceNode.setSingleton(true);
                         }
@@ -478,8 +473,7 @@ public class DataAggregateAOP {
                         bindSourcePropertyName = bindName;
                     }
 
-                    aggregateTargetBindProperty = new AggregateTargetBindProperty(bindSourcePropertyName, nextPathName, propertyBind.required(), false);
-
+                    aggregateTargetBindProperty = new AggregateTargetBindProperty(bindSourcePropertyName, nextPathName, propertyBind.required(), propertyBind.type(), 0);
                 } else if (field.isAnnotationPresent(DataAggregatePropertyMapping.class)) {
                     DataAggregatePropertyMapping propertyMapping = field.getAnnotation(DataAggregatePropertyMapping.class);
                     String value = propertyMapping.value();
@@ -498,25 +492,28 @@ public class DataAggregateAOP {
 
                     //todo 1.字段-在聚合对象中查找当前层级的同名字段 2.属性-查找当前层级同名属性 3.剩余字段如何处理?
                     bindSourcePropertyName = value;
-                    aggregateTargetBindProperty = new AggregateTargetBindProperty(value, nextPathName, true, true);
+                    aggregateTargetBindProperty = new AggregateTargetBindProperty(value, nextPathName, true, DataAggregatePropertyBind.BindType.DEFAULT, 1);
                 }
 
                 if (!bindSourcePropertyName.equals("") && aggregateTargetBindProperty != null) {
                     if (targetNode.bindPropertyMap.containsKey(bindSourceClassName)) {
-                        Map<String, AggregateTargetBindProperty> listMap = targetNode.bindPropertyMap.get(bindSourceClassName);
-                        if (listMap.get(bindSourcePropertyName) != null) {
-                            log.error("数据聚合-解析聚合对象异常,无效的绑定属性,class={},property={}", clazz.getName(), nextPathName);
+                        Map<String, List<AggregateTargetBindProperty>> listMap = targetNode.bindPropertyMap.get(bindSourceClassName);
+                        if (targetNode.getTarBindProperty(listMap, bindSourcePropertyName, 0) != null) {
+                            log.error("数据聚合-解析聚合对象异常,执行器属性重复绑定,class={},property={}", clazz.getName(), nextPathName);
                             throw new BusinessException(120_000, "数据聚合-聚合对象中绑定执行器属性重复");
                         }
-                        targetNode.bindPropertyMap.get(bindSourceClassName).put(bindSourcePropertyName, aggregateTargetBindProperty);
+                        if (listMap.get(bindSourcePropertyName) != null) {
+                            targetNode.bindPropertyMap.get(bindSourceClassName).get(bindSourcePropertyName).add(aggregateTargetBindProperty);
+                        } else {
+                            targetNode.bindPropertyMap.get(bindSourceClassName).put(bindSourcePropertyName, new ArrayList<>(List.of(aggregateTargetBindProperty)));
+                        }
                     } else {
-                        Map<String, AggregateTargetBindProperty> listMap = new HashMap<>();
-                        listMap.put(bindSourcePropertyName, aggregateTargetBindProperty);
+                        Map<String, List<AggregateTargetBindProperty>> listMap = new HashMap<>();
+                        listMap.put(bindSourcePropertyName, new ArrayList<>(List.of(aggregateTargetBindProperty)));
                         targetNode.bindPropertyMap.put(bindSourceClassName, listMap);
                     }
                 }
             }
-
             if (isParsingClass(propertyTypeClass)) {
                 parsingClass(new StringBuffer(absolutePathName.toString() + "." + field.getName()), propertyTypeClass, targetNode, sourceNode, type);
             }
@@ -734,8 +731,21 @@ public class DataAggregateAOP {
         //key 执行器类名(或default) val <key 绑定/映射的执行器中的相对属性名 val 聚合对象相对属性名>
         final Map<String, Map<String, List<AggregateTargetBindProperty>>> bindPropertyMap = new HashMap<>();
 
-        public AggregateTargetBindProperty getTarBindProperty(Map<String, List<AggregateTargetBindProperty>> map, String sourcePropertyName, String type) {
+        public AggregateTargetBindProperty getTarBindProperty(Map<String, List<AggregateTargetBindProperty>> map, String sourcePropertyName, int type) {
+            AggregateTargetBindProperty targetBindProperty = null;
+            if (map != null && map.containsKey(sourcePropertyName)) {
+                Optional<AggregateTargetBindProperty> targetProperty = map.get(sourcePropertyName).stream().filter(tarProperty -> {
+                    if (tarProperty.nodeType == type) {
+                        return true;
+                    }
+                    return false;
+                }).findFirst();
+                if (targetProperty.isPresent()) {
+                    targetBindProperty = targetProperty.get();
+                }
+            }
 
+            return targetBindProperty;
         }
 
         public AggregateTargetNode() {
@@ -776,11 +786,11 @@ public class DataAggregateAOP {
 
     static class AggregateTargetBindProperty {
         /**
-         * 标识绑定节点类别
+         * 标识节点类别
          * 0-绑定
          * 1-映射
          */
-        private final int mappingProperty;
+        private final int nodeType;
 
         private final DataAggregatePropertyBind.BindType bindType;
         //绑定的执行器中的相对属性名
@@ -795,7 +805,7 @@ public class DataAggregateAOP {
             this.aggregateTargetPropertyName = v2;
             this.required = v3;
             this.bindType = v4;
-            this.mappingProperty = v5;
+            this.nodeType = v5;
         }
 
         public String getActuatorPropertyName() {
@@ -808,6 +818,10 @@ public class DataAggregateAOP {
 
         public boolean isRequired() {
             return required;
+        }
+
+        public DataAggregatePropertyBind.BindType getBindType() {
+            return bindType;
         }
     }
 }
