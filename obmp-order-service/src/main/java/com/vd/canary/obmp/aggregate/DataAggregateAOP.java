@@ -114,10 +114,10 @@ public class DataAggregateAOP {
             //遍历每个属性绑定的所有执行器
             for (AggregateSourceNode sourceNode : targetPropertyEntry.getValue()) {
                 List<AbstractOrderDataAggregate> instances = new ArrayList();
-                Map<String, AggregateTargetBindProperty> classMap = targetNode.bindPropertyMap.get(sourceNode.sourceClass.getName());
-                Map<String, AggregateTargetBindProperty> defaultClassMap = targetNode.bindPropertyMap.get("DEFAULT_CLASS_NAME");
+                Map<String, List<AggregateTargetBindProperty>> classMap = targetNode.bindPropertyMap.get(sourceNode.sourceClass.getName());
+                Map<String, List<AggregateTargetBindProperty>> defaultClassMap = targetNode.bindPropertyMap.get("DEFAULT_CLASS_NAME");
 
-                //遍历执行器的属性,如果属性在聚合对象中存在绑定关系,则从聚合对象中获取对应的值注入到执行器中的属性
+                //遍历执行器属性,如果属性在聚合对象中存在绑定关系,则从聚合对象中获取对应的值注入到执行器中的属性
                 for (Map.Entry<String, PropertyDescriptor> entry : sourceNode.propertyAggregateMap.entrySet()) {
                     //todo 执行器是否单例,依据AggregateTargetBindProperty中的属性延迟到此处确认
                     String sourcePropertyName = entry.getKey();
@@ -372,6 +372,7 @@ public class DataAggregateAOP {
      * @throws ClassNotFoundException
      * @author zhengxin
      */
+    //todo 按照执行器,聚合对象,以及分别对应的注解build模式重写?
     private AggregateTargetNode parsingClass(StringBuffer absolutePathName, Class<?> clazz, AggregateTargetNode targetNode, AggregateSourceNode sourceNode, String type) throws ClassNotFoundException {
         if (clazz.isAnnotationPresent(DataAggregateType.class)) {
             Class[] sourceClass = clazz.getAnnotation(DataAggregateType.class).value();
@@ -536,13 +537,14 @@ public class DataAggregateAOP {
     private List<String> findTarStatementList(List<String> actualPathList, String targetProperty, String sourceProperty) {
         List<String> tarStatementList = new ArrayList<>();
         if (targetProperty.equals(sourceProperty)) {
+            //todo 现在存在嵌套
             //执行器中属性总为非嵌套,相等直接返回
             tarStatementList.add(actualPathList.get(actualPathList.indexOf(targetProperty)));
             return tarStatementList;
         }
 
         tarStatementList.addAll(actualPathList.stream().filter(actualPath -> {
-            //过滤掉中括号以及里面的值
+            //过滤中括号以及里面的值
             if (actualPath.replaceAll("\\[.*?\\]", "").contains(targetProperty)) {
                 return true;
             }
@@ -730,7 +732,11 @@ public class DataAggregateAOP {
         final Map<String, List<AggregateSourceNode>> propertyAggregateMap = new HashMap<>();
 
         //key 执行器类名(或default) val <key 绑定/映射的执行器中的相对属性名 val 聚合对象相对属性名>
-        final Map<String, Map<String, AggregateTargetBindProperty>> bindPropertyMap = new HashMap<>();
+        final Map<String, Map<String, List<AggregateTargetBindProperty>>> bindPropertyMap = new HashMap<>();
+
+        public AggregateTargetBindProperty getTarBindProperty(Map<String, List<AggregateTargetBindProperty>> map, String sourcePropertyName, String type) {
+
+        }
 
         public AggregateTargetNode() {
         }
@@ -771,11 +777,10 @@ public class DataAggregateAOP {
     static class AggregateTargetBindProperty {
         /**
          * 标识绑定节点类别
-         * true-映射
-         * false-绑定
+         * 0-绑定
+         * 1-映射
          */
-        //todo bind和mapping可以同时出现,拆分?
-        private final boolean mappingProperty;
+        private final int mappingProperty;
 
         private final DataAggregatePropertyBind.BindType bindType;
         //绑定的执行器中的相对属性名
@@ -785,7 +790,7 @@ public class DataAggregateAOP {
         //标示绑定到执行器的属性是否必要
         private final boolean required;
 
-        public AggregateTargetBindProperty(String v1, String v2, boolean v3, DataAggregatePropertyBind.BindType v4, boolean v5) {
+        public AggregateTargetBindProperty(String v1, String v2, boolean v3, DataAggregatePropertyBind.BindType v4, int v5) {
             this.actuatorPropertyName = v1;
             this.aggregateTargetPropertyName = v2;
             this.required = v3;

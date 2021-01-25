@@ -34,6 +34,7 @@ public @interface DataAggregatePropertyMapping {
 
     /**
      * 聚合对象与执行器待反写属性名称不一致时可以指定别名
+     * todo 用了mapping后同等与别名,用于附件二次重复?
      * @return
      */
     String alias() default "";
