@@ -118,7 +118,6 @@ public class DataAggregateAOP {
 
                 //遍历执行器属性,如果属性在聚合对象中存在绑定关系,则从聚合对象中获取对应的值注入到执行器中的属性
                 for (Map.Entry<String, PropertyDescriptor> entry : sourceNode.propertyAggregateMap.entrySet()) {
-                    //todo 执行器是否单例,依据AggregateTargetBindProperty中的属性延迟到此处确认
                     String sourcePropertyName = entry.getKey();
 
                     if (sourceNode.resourcePropertyMap.containsKey(sourcePropertyName)) {
@@ -134,6 +133,7 @@ public class DataAggregateAOP {
                     tarProperty = tarProperty == null ? targetNode.getTarBindProperty(defaultClassMap, sourcePropertyName, 0) : tarProperty;
 
                     if (tarProperty != null && tarProperty.getAggregateTargetPropertyName() != null) {
+                        //todo 放到initAggregateNode()
                         if (tarProperty.getBindType().equals(DataAggregatePropertyBind.BindType.MANY_TO_ONE) && !sourceNode.isSingleton()) {
                             //设置对应的执行器为多对一模式
                             sourceNode.setSingleton(true);
@@ -153,6 +153,11 @@ public class DataAggregateAOP {
                         //从多原则
                         //聚合对象与执行器1:1与n:n的情况
                         if (size > 1) {
+                            if (!sourceNode.isSingleton()) {
+                                //此时执行器必定不为单例
+                                log.error("数据聚合-聚合对象与执行器对应关系异常,");
+                                throw new BusinessException(120_000, "数据聚合-聚合对象与执行器对应关系异常");
+                            }
                             if (instances.size() == 1) {
                                 //todo 深clone方式
                                 for (int i = 1; i < size; i++) {
@@ -400,9 +405,10 @@ public class DataAggregateAOP {
                 targetPropertyName = targetPropertyName.charAt(0) == '.' ? targetPropertyName.substring(1) : targetPropertyName;
                 //设置解析对象待执行器
                 if (!targetNode.propertyAggregateMap.containsKey(targetPropertyName)) {
-                    targetNode.propertyAggregateMap.put(targetPropertyName, new ArrayList<>(Arrays.asList(AggregateSourceMap.get(source))));
+                    //支持执行器对应关系随聚合对象变化
+                    targetNode.propertyAggregateMap.put(targetPropertyName, new ArrayList<>(Arrays.asList(AggregateSourceMap.get(source).clone())));
                 } else {
-                    targetNode.propertyAggregateMap.get(targetPropertyName).add(AggregateSourceMap.get(source));
+                    targetNode.propertyAggregateMap.get(targetPropertyName).add(AggregateSourceMap.get(source).clone());
                 }
             }
         }
@@ -724,7 +730,7 @@ public class DataAggregateAOP {
         final List<String> propertyList = new ArrayList<>();
 
         //需要执行属性执行器map
-        //key 聚合对象的相对属性名 val 属性执行器对应AggregateSourceNode
+        //key 聚合对象的相对属性名 val 对应执行器节点解析信息
         //todo 弱引用map
         final Map<String, List<AggregateSourceNode>> propertyAggregateMap = new HashMap<>();
 
@@ -756,8 +762,8 @@ public class DataAggregateAOP {
         }
     }
 
-    static class AggregateSourceNode {
-        /* 标记执行器数据映射与反写模式 */
+    static class AggregateSourceNode implements Cloneable {
+        /* 标记执行器是否单例 */
         boolean singleton = false;
         final Class<?> sourceClass;
         final List<String> ignorePropertyList = new ArrayList<>();
@@ -781,6 +787,15 @@ public class DataAggregateAOP {
 
         public void setSingleton(boolean singleton) {
             this.singleton = singleton;
+        }
+
+        protected AggregateSourceNode clone() {
+            try {
+                return (AggregateSourceNode) super.clone();
+            } catch (CloneNotSupportedException e) {
+                log.error("数据聚合-执行器拷贝异常,执行器={}", sourceClass.getName(), e);
+                throw new BusinessException(120_000, "数据聚合-执行器拷贝异常");
+            }
         }
     }
 

@@ -5,6 +5,10 @@ import java.lang.reflect.Method;
 import java.util.Map;
 
 /**
+ * 执行器抽象类
+ * 从可维护角度出发每个执行器应有且只有一种对应关系
+ * 出于复用考虑当前支持对应关系随聚合对象变化
+ *
  * @author zx
  * @date 2020/12/16 10:10
  */
