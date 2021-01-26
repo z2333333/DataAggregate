@@ -142,7 +142,7 @@ public class DataAggregateAOP {
                         //从属性理论访问路径构建实际访问路径
                         buildStatementList = buildStatementList(responseData, new ArrayList(), tarProperty.getAggregateTargetPropertyName(), "", "", "", "read", new ArrayList<>());
                     }
-                    //todo 先不考虑执行器的属性绑定跨层的情况
+                    //todo 执行器的属性绑定跨层时,先一后多的情况下有问题 -先找到最大值
                     //注入依赖值
                     if (buildStatementList != null && buildStatementList.size() > 0) {
                         if (instances.size() == 0) {
