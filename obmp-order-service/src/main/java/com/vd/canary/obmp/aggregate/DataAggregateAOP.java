@@ -374,6 +374,9 @@ public class DataAggregateAOP {
      */
     //todo 按照执行器,聚合对象,以及分别对应的注解build模式重写?
     private AggregateTargetNode parsingClass(StringBuffer absolutePathName, Class<?> clazz, AggregateTargetNode targetNode, AggregateSourceNode sourceNode, String type) throws ClassNotFoundException {
+        String targetPropertyName = absolutePathName.toString().equals("") ? "~" : absolutePathName.toString();
+        targetPropertyName = targetPropertyName.charAt(0) == '.' ? targetPropertyName.substring(1) : targetPropertyName;
+
         if (clazz.isAnnotationPresent(DataAggregateType.class)) {
             Class[] sourceClass = clazz.getAnnotation(DataAggregateType.class).value();
             if (sourceClass.length == 0) {
@@ -401,11 +404,8 @@ public class DataAggregateAOP {
                     AggregateSourceMap.put(source, sourceNodeNow);
                 }
 
-                String targetPropertyName = absolutePathName.toString().equals("") ? "~" : absolutePathName.toString();
-                targetPropertyName = targetPropertyName.charAt(0) == '.' ? targetPropertyName.substring(1) : targetPropertyName;
                 //设置解析对象待执行器
                 if (!targetNode.propertyAggregateMap.containsKey(targetPropertyName)) {
-                    //支持执行器对应关系随聚合对象变化
                     targetNode.propertyAggregateMap.put(targetPropertyName, new ArrayList<>(Arrays.asList(AggregateSourceMap.get(source).clone())));
                 } else {
                     targetNode.propertyAggregateMap.get(targetPropertyName).add(AggregateSourceMap.get(source).clone());
@@ -479,6 +479,21 @@ public class DataAggregateAOP {
                         bindSourcePropertyName = bindName;
                     }
 
+                    if (propertyBind.type().equals(DataAggregatePropertyBind.BindType.MANY_TO_ONE)) {
+                        //只要有一个属性指定就可以(运行时解析或整个完成解析后再执行)
+                        for (AggregateSourceNode aggregateSourceNode : targetNode.propertyAggregateMap.get(targetPropertyName)) {
+                            if (!aggregateSourceNode.isSingleton()) {
+                                for (Map.Entry<String, PropertyDescriptor> aggregateSourceNodeEntry : aggregateSourceNode.propertyAggregateMap.entrySet()) {
+                                    if (aggregateSourceNodeEntry.getKey().equals(bindName)) {
+                                        aggregateSourceNode.setSingleton(true);
+                                    }
+                                }
+                            }
+                        }
+                        //设置执行器对应关系为多对一
+                        //支持执行器对应关系随聚合对象变化
+                        sourceNode.setSingleton(true);
+                    }
                     aggregateTargetBindProperty = new AggregateTargetBindProperty(bindSourcePropertyName, nextPathName, propertyBind.required(), propertyBind.type(), 0);
                 } else if (field.isAnnotationPresent(DataAggregatePropertyMapping.class)) {
                     DataAggregatePropertyMapping propertyMapping = field.getAnnotation(DataAggregatePropertyMapping.class);
