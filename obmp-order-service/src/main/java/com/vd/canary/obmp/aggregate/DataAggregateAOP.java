@@ -22,6 +22,7 @@ import java.beans.PropertyDescriptor;
 import java.lang.reflect.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
@@ -481,10 +482,12 @@ public class DataAggregateAOP {
 
                     if (propertyBind.type().equals(DataAggregatePropertyBind.BindType.MANY_TO_ONE)) {
                         //只要有一个属性指定就可以(运行时解析或整个完成解析后再执行)
+                        AtomicInteger bindTime = new AtomicInteger(0);
                         for (AggregateSourceNode aggregateSourceNode : targetNode.propertyAggregateMap.get(targetPropertyName)) {
                             if (!aggregateSourceNode.isSingleton()) {
                                 for (Map.Entry<String, PropertyDescriptor> aggregateSourceNodeEntry : aggregateSourceNode.propertyAggregateMap.entrySet()) {
                                     if (aggregateSourceNodeEntry.getKey().equals(bindName)) {
+                                        bindTime.
                                         aggregateSourceNode.setSingleton(true);
                                     }
                                 }
