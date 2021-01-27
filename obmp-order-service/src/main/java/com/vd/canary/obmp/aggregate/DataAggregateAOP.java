@@ -133,16 +133,15 @@ public class DataAggregateAOP {
                     tarProperty = tarProperty == null ? targetNode.getTarBindProperty(defaultClassMap, sourcePropertyName, 0) : tarProperty;
 
                     if (tarProperty != null && tarProperty.getAggregateTargetPropertyName() != null) {
-                        //todo 放到initAggregateNode()
-                        if (tarProperty.getBindType().equals(DataAggregatePropertyBind.BindType.MANY_TO_ONE) && !sourceNode.isSingleton()) {
-                            //设置对应的执行器为多对一模式
+                        if (!sourceNode.isSingleton() && tarProperty.getBindType().equals(DataAggregatePropertyBind.BindType.MANY_TO_ONE)) {
+                            //设置执行器对应关系为多对一
                             sourceNode.setSingleton(true);
                         }
 
                         //从属性理论访问路径构建实际访问路径
                         buildStatementList = buildStatementList(responseData, new ArrayList(), tarProperty.getAggregateTargetPropertyName(), "", "", "", "read", new ArrayList<>());
                     }
-                    //todo 执行器的属性绑定跨层时,先一后多的情况下有问题 -先找到最大值
+                    //todo 执行器的属性绑定跨层时,先一后多的情况下有问题 -多个属性注解指定多对一时,出现顺序先后问题
                     //注入依赖值
                     if (buildStatementList != null && buildStatementList.size() > 0) {
                         if (instances.size() == 0) {
@@ -364,7 +363,8 @@ public class DataAggregateAOP {
 
     /**
      * 解析静态Class对象(递归)
-     *
+     * 约定:聚合对象中属性为自定义类或容器时,为其指定执行器需将
+     * 执行器放到属性对应的类名之上(容器为泛型对应的类名)
      * @param absolutePathName
      * @param clazz
      * @param targetNode
@@ -758,7 +758,6 @@ public class DataAggregateAOP {
         }
 
         public void initAggregateNode() {
-
         }
     }
 
@@ -793,8 +792,8 @@ public class DataAggregateAOP {
             try {
                 return (AggregateSourceNode) super.clone();
             } catch (CloneNotSupportedException e) {
-                log.error("数据聚合-执行器拷贝异常,执行器={}", sourceClass.getName(), e);
-                throw new BusinessException(120_000, "数据聚合-执行器拷贝异常");
+                log.error("数据聚合-执行器克隆异常,执行器={}", sourceClass.getName(), e);
+                throw new BusinessException(120_000, "数据聚合-执行器克隆异常");
             }
         }
     }

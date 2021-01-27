@@ -28,7 +28,7 @@ public @interface DataAggregatePropertyBind {
     /**
      * 绑定类型
      * 默认根据自动判断,仅在聚合对象与执行器属性多对一时需显示指定
-     * 每个聚合对象的执行器状态互相独立且有且只有一种状态
+     * 每个聚合对象的执行器几对几对应关系互相独立且有且只有一种状态
      * @return
      */
     BindType type() default BindType.DEFAULT;
