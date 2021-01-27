@@ -95,7 +95,7 @@ public class DataAggregateAOP {
         if (!AggregateTargetMap.containsKey(clazz.getName())) {
             AggregateTargetNode aggregateTargetNode;
             try {
-                aggregateTargetNode = parsingClass(new StringBuffer(), clazz, new AggregateTargetNode(), null, "");
+                aggregateTargetNode = parsingClass(new StringBuffer(), clazz, new AggregateTargetNode(clazz), null, "");
             } catch (ClassNotFoundException e) {
                 log.error("数据聚合-解析静态Class异常", e);
                 throw new BusinessException(120_000, "数据聚合-ClassNotFound:解析静态Class异常");
@@ -134,11 +134,6 @@ public class DataAggregateAOP {
                     tarProperty = tarProperty == null ? targetNode.getTarBindProperty(defaultClassMap, sourcePropertyName, 0) : tarProperty;
 
                     if (tarProperty != null && tarProperty.getAggregateTargetPropertyName() != null) {
-                        if (!sourceNode.isSingleton() && tarProperty.getBindType().equals(DataAggregatePropertyBind.BindType.MANY_TO_ONE)) {
-                            //设置执行器对应关系为多对一
-                            sourceNode.setSingleton(true);
-                        }
-
                         //从属性理论访问路径构建实际访问路径
                         buildStatementList = buildStatementList(responseData, new ArrayList(), tarProperty.getAggregateTargetPropertyName(), "", "", "", "read", new ArrayList<>());
                     }
@@ -149,22 +144,21 @@ public class DataAggregateAOP {
                             instances.add(getOrderDataAggregateInstance(sourceNode));
                         }
 
-                        int size = buildStatementList.size();
+                        int expectSize = buildStatementList.size();
                         //从多原则
-                        //聚合对象与执行器1:1与n:n的情况
-                        if (size > 1) {
+                        if (expectSize > 1) {
+                            //确定对应关系
                             if (!sourceNode.isSingleton()) {
-                                //此时执行器必定不为单例
-                                log.error("数据聚合-聚合对象与执行器对应关系异常,");
-                                throw new BusinessException(120_000, "数据聚合-聚合对象与执行器对应关系异常");
-                            }
-                            if (instances.size() == 1) {
-                                //todo 深clone方式
-                                for (int i = 1; i < size; i++) {
-                                    instances.add(getOrderDataAggregateInstance(sourceNode));
+                                //聚合对象:执行器 = 1:n与n:n的情况(n:1时执行器size=1)
+                                if (instances.size() < expectSize) {
+                                    //todo 深clone方式
+                                    for (int i = instances.size(); i < expectSize; i++) {
+                                        instances.add(getOrderDataAggregateInstance(sourceNode));
+                                    }
                                 }
                             }
-                            for (int i = 0; i < size; i++) {
+
+                            for (int i = 0; i < expectSize; i++) {
                                 setActuatorProperty(responseData, writeMethod, tarProperty, buildStatementList.get(i), instances.get(i));
                             }
                         } else {
@@ -481,7 +475,7 @@ public class DataAggregateAOP {
                     }
 
                     if (propertyBind.type().equals(DataAggregatePropertyBind.BindType.MANY_TO_ONE)) {
-                        //只要有一个属性指定就可以(运行时解析或整个完成解析后再执行)
+                        //只要有一个属性指定就可以
                         AtomicInteger bindTime = new AtomicInteger(0);
                         for (AggregateSourceNode aggregateSourceNode : targetNode.propertyAggregateMap.get(targetPropertyName)) {
                             if (!aggregateSourceNode.isSingleton()) {

@@ -25,27 +25,25 @@ import com.vd.canary.file.api.request.UploadFileReq;
 import com.vd.canary.file.api.response.CountBillNumResp;
 import com.vd.canary.file.api.response.FileInfoResp;
 import com.vd.canary.file.api.response.vo.FileBillVO;
+import com.vd.canary.obmp.arm.api.feign.ArmContractPaymentFeignClient;
+import com.vd.canary.obmp.arm.api.request.ArmContractPaymentReq;
 import com.vd.canary.obmp.customer.api.feign.customer.CustomerPurchaseManagerFeignClient;
 import com.vd.canary.obmp.customer.api.request.customer.CustomerManagerInfoReq;
 import com.vd.canary.obmp.customer.api.response.customer.vo.CustomerManagerVO;
 import com.vd.canary.obmp.order.api.constants.*;
 import com.vd.canary.obmp.order.api.request.*;
-import com.vd.canary.obmp.order.api.request.mission.CreateMissionReq;
 import com.vd.canary.obmp.order.api.request.mission.MissionRuleReq;
-import com.vd.canary.obmp.order.api.request.mission.StaffReq;
 import com.vd.canary.obmp.order.api.request.order.*;
 import com.vd.canary.obmp.order.api.request.purchase.PomStaffReq;
 import com.vd.canary.obmp.order.api.response.*;
-import com.vd.canary.obmp.order.api.response.mission.ApplyMissionResp;
 import com.vd.canary.obmp.order.api.response.mission.MissionConfigRuleResp;
 import com.vd.canary.obmp.order.api.response.vo.PomPurchaseContractLineVO;
 import com.vd.canary.obmp.order.api.response.vo.ShipmentPlanHeadVO;
 import com.vd.canary.obmp.order.api.response.vo.ShipmentPlanLineVO;
-import com.vd.canary.obmp.order.api.response.vo.SupplyInquiryLineAndQuotesVO;
 import com.vd.canary.obmp.order.api.response.vo.order.*;
 import com.vd.canary.obmp.order.api.status.SomSalesContractResponseStatus;
-import com.vd.canary.obmp.order.api.status.SupplierInquiryResponseStatus;
 import com.vd.canary.obmp.order.delay.DelayQueueService;
+import com.vd.canary.obmp.order.delay.PomPurchaseContracCallBack;
 import com.vd.canary.obmp.order.operation.sales.entity.ShipmentPlanReq;
 import com.vd.canary.obmp.order.operation.sales.entity.ShipmentPlanSaleVo;
 import com.vd.canary.obmp.order.operation.sales.service.SomSalesContractService;
@@ -178,7 +176,8 @@ public class PurchaseServiceImpl implements PurchaseService {
     BackgroundCategoryFeign backgroundCategoryFeign;
     @Resource
     ProductSkuFeign productSkuFeign;
-
+    @Resource
+    private ArmContractPaymentFeignClient armContractPaymentFeignClient;
     private final ThreadPoolExecutor threadPool = new ThreadPoolExecutor(2, 4, 6, TimeUnit.SECONDS, new ArrayBlockingQueue<>(10), new ThreadPoolExecutor.CallerRunsPolicy());
 
     @Override
@@ -455,7 +454,7 @@ public class PurchaseServiceImpl implements PurchaseService {
                 throw new BusinessException(120_000, "未找到当前采购单");
             }
 
-            purchaseComponent.checkStatus(StatusValidity.getAssignManager(), pomPurchaseContractHead, "指定采购经理");
+//            purchaseComponent.checkStatus(StatusValidity.getAssignManager(), pomPurchaseContractHead, "指定采购经理");
 
             pomPurchaseContractHead.setDepartmentId(req.getDepartmentId());
             pomPurchaseContractHead.setDepartmentName(req.getDepartmentName());
@@ -466,26 +465,27 @@ public class PurchaseServiceImpl implements PurchaseService {
             pomPurchaseContractHead.setStaffPhone(req.getStaffPhone());
 
             // 订单状态：待提交
-            purchaseComponent.updatePurchaseOrderStatus(pomPurchaseContractHead, PomConstants.OrderStatus.SUBMIT_PENDING, "指定采购经理");
-
-            //生成编辑采购订单的任务给到采购经理
-            CreateMissionReq missionReq = new CreateMissionReq();
-            missionReq.setSerialCode(pomPurchaseContractHead.getPurchaseContractCode());
-            missionReq.setSerialType(MissionConstants.OrderType.POM_ORDER.getCode());
-            missionReq.setSerialDealStatus(pomPurchaseContractHead.getOrderStatus());
-            missionReq.setSerialName(pomPurchaseContractHead.getContractName());
-            missionReq.setCustomerName(pomPurchaseContractHead.getSupplierName());
-            missionReq.setCustomerType(1);
-            missionReq.setCreateUserName(pomPurchaseContractHead.getCreatorName());
-            missionReq.setSerialCreateTime(new Date());
-            StaffReq staffReq = new StaffReq();
-            BeanUtils.copyProperties(pomPurchaseContractHead, staffReq);
-            missionReq.setDealStaff(staffReq);
-            ResponseBO<ApplyMissionResp> mission = missionService.createMission(missionReq);
-            if (mission.isFailed()) {
-                log.error("指定采购经理异常,调用生成代办接口失败:入参:{},返回值:{}", JSON.toJSONString(missionReq), JSON.toJSONString(mission));
-                throw new BusinessException(120_000, "指定采购经理异常,调用生成代办接口失败");
-            }
+//            purchaseComponent.updatePurchaseOrderStatus(pomPurchaseContractHead, PomConstants.OrderStatus.SUBMIT_PENDING, "指定采购经理");
+            pomPurchaseContractHeadMapper.updateById(pomPurchaseContractHead);
+//
+//            //生成编辑采购订单的任务给到采购经理
+//            CreateMissionReq missionReq = new CreateMissionReq();
+//            missionReq.setSerialCode(pomPurchaseContractHead.getPurchaseContractCode());
+//            missionReq.setSerialType(MissionConstants.OrderType.POM_ORDER.getCode());
+//            missionReq.setSerialDealStatus(pomPurchaseContractHead.getOrderStatus());
+//            missionReq.setSerialName(pomPurchaseContractHead.getContractName());
+//            missionReq.setCustomerName(pomPurchaseContractHead.getSupplierName());
+//            missionReq.setCustomerType(1);
+//            missionReq.setCreateUserName(pomPurchaseContractHead.getCreatorName());
+//            missionReq.setSerialCreateTime(new Date());
+//            StaffReq staffReq = new StaffReq();
+//            BeanUtils.copyProperties(pomPurchaseContractHead, staffReq);
+//            missionReq.setDealStaff(staffReq);
+//            ResponseBO<ApplyMissionResp> mission = missionService.createMission(missionReq);
+//            if (mission.isFailed()) {
+//                log.error("指定采购经理异常,调用生成代办接口失败:入参:{},返回值:{}", JSON.toJSONString(missionReq), JSON.toJSONString(mission));
+//                throw new BusinessException(120_000, "指定采购经理异常,调用生成代办接口失败");
+//            }
         }
 
         return ResponseUtil.ok();
@@ -1222,7 +1222,7 @@ public class PurchaseServiceImpl implements PurchaseService {
                         .stream()
                         .collect(Collectors.toMap(k -> k.getId(), v -> v));
 
-                shipmentPlanResp.getShipmentPlanHeadVOList().stream().forEach(head -> head.getShipmentPlanLineVOList().forEach(line ->{
+                shipmentPlanResp.getShipmentPlanHeadVOList().stream().forEach(head -> head.getShipmentPlanLineVOList().forEach(line -> {
                     if (skuInfoVoMap.containsKey(line.getSkuId())) {
                         ProductSkuInfoVo skuInfoVo = skuInfoVoMap.get(line.getSkuId());
                         line.setSkuAuxiliaryNum(skuInfoVo.getSkuAuxiliaryNum());
@@ -1367,7 +1367,7 @@ public class PurchaseServiceImpl implements PurchaseService {
         }
         log.info("提交采购订单-设置接单定时...采购单号:{},接单时限:{}", pomPurchaseContractHead.getPurchaseContractCode(), ruleResp.getMaxAcceptMinute());
         if (ruleResp.getMaxAcceptMinute() != 0) {
-            delayQueueService.initDelay(DelayQueueService.KEY_PURCHASE.concat(pomPurchaseContractHead.getPurchaseContractHeadId()), pomPurchaseContractHead.getPurchaseContractHeadId(), ruleResp.getMaxAcceptMinute(), TimeUnit.MINUTES, "PomPurchaseContracCallBack");
+            delayQueueService.initDelay(DelayQueueService.KEY_PURCHASE.concat(pomPurchaseContractHead.getPurchaseContractHeadId()), pomPurchaseContractHead.getPurchaseContractHeadId(), ruleResp.getMaxAcceptMinute(), TimeUnit.MINUTES, PomPurchaseContracCallBack.class);
         }
     }
 
@@ -1396,6 +1396,8 @@ public class PurchaseServiceImpl implements PurchaseService {
                 purchaseComponent.setPurchaseOrderStatus(pomPurchaseContractHead, PomConstants.OrderStatus.VALID, "采购订单生效");
                 pomPurchaseContractHead.setSupplyRefuseReason("来源单据(销售订单)发起生效操作");
                 pomPurchaseContractHead.setSignDate(LocalDateTime.now());
+                // 采购单生效条款推送到财务
+                createFollowUpInformation(pomPurchaseContractHead.getPurchaseContractHeadId());
             });
 
             pomPurchaseContractHeadService.updateBatchById(pomPurchaseContractHeadList);
@@ -1404,6 +1406,35 @@ public class PurchaseServiceImpl implements PurchaseService {
 
         return ResponseUtil.ok();
     }
+
+    private void createFollowUpInformation(String purchaseContractHeadId) {
+        try {
+            List<ArmContractPaymentReq> armReqList = new ArrayList<>();
+            List<PomPurchaseContractPayment> purDetail = getPomPurchasePayments(purchaseContractHeadId);
+            PomPurchaseContractHead pomPurchaseContractHead = pomPurchaseContractHeadMapper.selectById(purchaseContractHeadId);
+            purDetail.forEach(payment -> {
+                ArmContractPaymentReq paymentReq = BeanUtil.convert(payment, ArmContractPaymentReq.class);
+                paymentReq.setType("2");
+                paymentReq.setSourceData("1");
+                paymentReq.setPurchaseContractHeadId(purchaseContractHeadId);
+                //兼容前端之前用DELIVERY作为发货单枚举
+                paymentReq.setFromType(payment.getPaymentCondition().equalsIgnoreCase("DELIVERY") ? PomAgreementConstant.PaymentConditionType.SIGN.key : payment.getPaymentCondition());
+                if (payment.getPaymentCondition().equalsIgnoreCase(PomAgreementConstant.PaymentConditionType.CONTRACT.key)) {
+                    paymentReq.setBeginDate(LocalDateTime.now());
+                    paymentReq.setBillCode(pomPurchaseContractHead.getPurchaseContractCode());
+                    paymentReq.setBillTotalAmount(pomPurchaseContractHead.getTotalAmount());
+                } else {
+                    paymentReq.setAmount(BigDecimal.ZERO);
+                }
+                armReqList.add(paymentReq);
+            });
+            log.info("推送采购条款到财务,线上订单入参={}", JSON.toJSONString(armReqList));
+            armContractPaymentFeignClient.batchCreate(armReqList);
+        } catch (Exception e) {
+            log.info("推送采购条款到财务失败,线上订单入参={}", JSON.toJSONString(purchaseContractHeadId));
+        }
+    }
+
 
     @Override
     @Transactional
@@ -1791,116 +1822,120 @@ public class PurchaseServiceImpl implements PurchaseService {
      * @return
      */
     @Override
+    @Deprecated
     public ResponseBO<SupplierDetailResp> querySupplierQuotesDetail(SupplierDetailReq supplierDetailReq) {
-        //供方询报价head表
-        SupplyInquiryHeadEntity supplyInquiryHeadEntity = Optional.ofNullable(supplyInquiryHeadService.getById(supplierDetailReq.getInquiryId())).orElseThrow(() -> new BusinessException(SupplierInquiryResponseStatus.SUPPLIER_INQUIRY_132010));
-        //校验询价单状态
-        if (!SupplyInquiryConstants.InquiryStatus.QUOTED.getKey().contains(supplyInquiryHeadEntity.getInquiryStatus())) {
-            throw new BusinessException(120_000, "当前询价单状态未为部分报价或已报价,无法生成订单");
-        }
-
-        //查询商品信息
-        List<SupplyInquiryLineEntity> supplyInquiryLineEntities = supplyInquiryLineService.list(new QueryWrapper<SupplyInquiryLineEntity>().eq("inquiry_head_id", supplyInquiryHeadEntity.getInquiryId()));
-        if (CollectionUtils.isEmpty(supplyInquiryLineEntities)) {
-            throw new BusinessException(SupplierInquiryResponseStatus.SUPPLIER_INQUIRY_132011);
-        }
-
-        //供方与供方报价信息(供方A-商品A，供方B-商品A，供方A-商品B)
-        List<SupplyInquiryLineAndQuotesVO> supplyInquiryLineAndQuotesVOList = new ArrayList<>();
-
-        //遍历商品
-        for (SupplyInquiryLineEntity supplyInquiryLineEntity : supplyInquiryLineEntities) {
-            //供方报价信息,一个商品存在多个供方报价
-            //查找当前商品对应的报价信息(分别对应不同供应商)
-            List<SupplyQuotesLineEntity> supplyQuotesEntities = supplyQuotesService.list(new LambdaQueryWrapper<SupplyQuotesLineEntity>().
-                    eq(SupplyQuotesLineEntity::getInquiryHeadId, supplyInquiryHeadEntity.getInquiryId())
-                    .eq(SupplyQuotesLineEntity::getInquiryLineId, supplyInquiryLineEntity.getInquiryLineId()));
-            //新增询价时未选择供方的情况
-            if (CollectionUtils.isEmpty(supplyQuotesEntities)) {
-                continue;
-            }
-
-            //遍历对同个商品报价的不同供方
-            for (SupplyQuotesLineEntity supplyQuotesEntity : supplyQuotesEntities) {
-                //判断是否已报价
-                SupplyQuotesHeadEntity supplyQuotesHeadEntity = supplyQuotesHeadService.getOne(new QueryWrapper<SupplyQuotesHeadEntity>().lambda()
-                        .eq(SupplyQuotesHeadEntity::getInquiryHeadId, supplyInquiryHeadEntity.getInquiryId())
-                        .eq(SupplyQuotesHeadEntity::getSupplyId, supplyQuotesEntity.getSupplyId()));
-                if (!StatusValidity.getQuoteStatusInEffect().contains(supplyQuotesHeadEntity.getQuotesStatus())) {
-                    continue;
-                }
-                SupplyInquiryLineAndQuotesVO supplyInquiryLineAndQuotesVO = new SupplyInquiryLineAndQuotesVO();
-                //注入商品信息
-                BeanUtils.copyProperties(supplyInquiryLineEntity, supplyInquiryLineAndQuotesVO);
-                //注入供方报价信息
-                BeanUtils.copyProperties(supplyQuotesEntity, supplyInquiryLineAndQuotesVO);
-                supplyInquiryLineAndQuotesVOList.add(supplyInquiryLineAndQuotesVO);
-            }
-        }
-
-        SupplierDetailResp supplierDetailResp = new SupplierDetailResp();
-        BeanUtils.copyProperties(supplyInquiryHeadEntity, supplierDetailResp);
-        supplierDetailResp.setLineAndQuotesVOList(supplyInquiryLineAndQuotesVOList);
-        return ResponseUtil.ok(supplierDetailResp);
+//        //供方询报价head表
+//        SupplyInquiryHeadEntity supplyInquiryHeadEntity = Optional.ofNullable(supplyInquiryHeadService.getById(supplierDetailReq.getInquiryId())).orElseThrow(() -> new BusinessException(SupplierInquiryResponseStatus.SUPPLIER_INQUIRY_132010));
+//        //校验询价单状态
+//        if (!SupplyInquiryConstants.InquiryStatus.QUOTED.getKey().contains(supplyInquiryHeadEntity.getInquiryStatus())) {
+//            throw new BusinessException(120_000, "当前询价单状态未为部分报价或已报价,无法生成订单");
+//        }
+//
+//        //查询商品信息
+//        List<SupplyInquiryLineEntity> supplyInquiryLineEntities = supplyInquiryLineService.list(new QueryWrapper<SupplyInquiryLineEntity>().eq("inquiry_head_id", supplyInquiryHeadEntity.getInquiryId()));
+//        if (CollectionUtils.isEmpty(supplyInquiryLineEntities)) {
+//            throw new BusinessException(SupplierInquiryResponseStatus.SUPPLIER_INQUIRY_132011);
+//        }
+//
+//        //供方与供方报价信息(供方A-商品A，供方B-商品A，供方A-商品B)
+//        List<SupplyInquiryLineAndQuotesVO> supplyInquiryLineAndQuotesVOList = new ArrayList<>();
+//
+//        //遍历商品
+//        for (SupplyInquiryLineEntity supplyInquiryLineEntity : supplyInquiryLineEntities) {
+//            //供方报价信息,一个商品存在多个供方报价
+//            //查找当前商品对应的报价信息(分别对应不同供应商)
+//            List<SupplyQuotesLineEntity> supplyQuotesEntities = supplyQuotesService.list(new LambdaQueryWrapper<SupplyQuotesLineEntity>().
+//                    eq(SupplyQuotesLineEntity::getInquiryHeadId, supplyInquiryHeadEntity.getInquiryId())
+//                    .eq(SupplyQuotesLineEntity::getInquiryLineId, supplyInquiryLineEntity.getInquiryLineId()));
+//            //新增询价时未选择供方的情况
+//            if (CollectionUtils.isEmpty(supplyQuotesEntities)) {
+//                continue;
+//            }
+//
+//            //遍历对同个商品报价的不同供方
+//            for (SupplyQuotesLineEntity supplyQuotesEntity : supplyQuotesEntities) {
+//                //判断是否已报价
+//                SupplyQuotesHeadEntity supplyQuotesHeadEntity = supplyQuotesHeadService.getOne(new QueryWrapper<SupplyQuotesHeadEntity>().lambda()
+//                        .eq(SupplyQuotesHeadEntity::getInquiryHeadId, supplyInquiryHeadEntity.getInquiryId())
+//                        .eq(SupplyQuotesHeadEntity::getSupplyId, supplyQuotesEntity.getSupplyId()));
+//                if (!StatusValidity.getQuoteStatusInEffect().contains(supplyQuotesHeadEntity.getQuotesStatus())) {
+//                    continue;
+//                }
+//                SupplyInquiryLineAndQuotesVO supplyInquiryLineAndQuotesVO = new SupplyInquiryLineAndQuotesVO();
+//                //注入商品信息
+//                BeanUtils.copyProperties(supplyInquiryLineEntity, supplyInquiryLineAndQuotesVO);
+//                //注入供方报价信息
+//                BeanUtils.copyProperties(supplyQuotesEntity, supplyInquiryLineAndQuotesVO);
+//                supplyInquiryLineAndQuotesVOList.add(supplyInquiryLineAndQuotesVO);
+//            }
+//        }
+//
+//        SupplierDetailResp supplierDetailResp = new SupplierDetailResp();
+//        BeanUtils.copyProperties(supplyInquiryHeadEntity, supplierDetailResp);
+//        supplierDetailResp.setLineAndQuotesVOList(supplyInquiryLineAndQuotesVOList);
+//        return ResponseUtil.ok(supplierDetailResp);
+        return null;
     }
 
     @Override
+    @Deprecated
     public ResponseBO<Boolean> updateQuotesDetails(SupplierBatchUpdateReq supplierBatchUpdateReq) {
-        for (SupplierBatchUpdateBO supplierBatchUpdateBO : supplierBatchUpdateReq.getSupplierBatchUpdateBOList()) {
-            //todo 存在相同商品多个供方报价,不需要对同个商品多次更新,后期做去重处理
-            //更新供方报价表
-            SupplyQuotesLineEntity supplyQuotesEntity = new SupplyQuotesLineEntity();
-            supplyQuotesEntity.setQuoteId(supplierBatchUpdateBO.getQuoteId());
-            supplyQuotesEntity.setQuantity(supplierBatchUpdateBO.getQuantity());
-            supplyQuotesEntity.setThreeCategoryId(supplierBatchUpdateBO.getThreeCategoryId());
-            supplyQuotesEntity.setThreeCategoryCode(supplierBatchUpdateBO.getThreeCategoryCode());
-            supplyQuotesEntity.setThreeCategoryName(supplierBatchUpdateBO.getThreeCategoryName());
-            supplyQuotesService.updateById(supplyQuotesEntity);
-
-            //更新商品表
-            SupplyInquiryLineEntity supplyInquiryLineEntity = new SupplyInquiryLineEntity();
-            BeanUtils.copyProperties(supplierBatchUpdateBO, supplyInquiryLineEntity);
-            supplyInquiryLineEntity.setQuantity(null);
-            supplyInquiryLineService.updateById(supplyInquiryLineEntity);
-        }
+//        for (SupplierBatchUpdateBO supplierBatchUpdateBO : supplierBatchUpdateReq.getSupplierBatchUpdateBOList()) {
+//            //todo 存在相同商品多个供方报价,不需要对同个商品多次更新,后期做去重处理
+//            //更新供方报价表
+//            SupplyQuotesLineEntity supplyQuotesEntity = new SupplyQuotesLineEntity();
+//            supplyQuotesEntity.setQuoteId(supplierBatchUpdateBO.getQuoteId());
+//            supplyQuotesEntity.setQuantity(supplierBatchUpdateBO.getQuantity());
+//            supplyQuotesEntity.setThreeCategoryId(supplierBatchUpdateBO.getThreeCategoryId());
+//            supplyQuotesEntity.setThreeCategoryCode(supplierBatchUpdateBO.getThreeCategoryCode());
+//            supplyQuotesEntity.setThreeCategoryName(supplierBatchUpdateBO.getThreeCategoryName());
+//            supplyQuotesService.updateById(supplyQuotesEntity);
+//
+//            //更新商品表
+//            SupplyInquiryLineEntity supplyInquiryLineEntity = new SupplyInquiryLineEntity();
+//            BeanUtils.copyProperties(supplierBatchUpdateBO, supplyInquiryLineEntity);
+//            supplyInquiryLineEntity.setQuantity(null);
+//            supplyInquiryLineService.updateById(supplyInquiryLineEntity);
+//        }
         return ResponseUtil.ok();
     }
 
     @Override
     public ResponseBO<SupplierQuotesResp> quotesList(SupplierQuotesListReq supplierQuotesListReq) {
-        List<SupplyQuotesLineEntity> supplyQuotesLineEntities = supplyQuotesLineMapper.selectBatchIds(supplierQuotesListReq.getQuotesList());
-        if (CollectionUtils.isEmpty(supplyQuotesLineEntities)) {
-            throw new BusinessException(120_000, "未找到供应商报价信息");
-        }
-
-        SupplyInquiryHeadEntity supplyInquiryHeadEntity = supplyInquiryHeadService.getById(supplyQuotesLineEntities.get(0).getInquiryHeadId());
-        SupplierQuotesResp supplierQuotesListResp = new SupplierQuotesResp();
-        BeanUtils.copyProperties(supplyInquiryHeadEntity, supplierQuotesListResp);
-        List<SupplyGoodsAndSupInfoVO> supplyGoodsAndSupInfoVOList = new ArrayList<>();
-
-        for (SupplyQuotesLineEntity supplyQuotesLineEntity : supplyQuotesLineEntities) {
-            SupplyGoodsAndSupInfoVO supplyGoodsAndSupInfoVO = new SupplyGoodsAndSupInfoVO();
-
-            SupplyQuotesLineVO supplyQuotesLineVO = new SupplyQuotesLineVO();
-            BeanUtils.copyProperties(supplyQuotesLineEntity, supplyQuotesLineVO);
-            supplyGoodsAndSupInfoVO.setSupplyQuotesLineVO(supplyQuotesLineVO);
-
-            //获取商品与供应商信息
-            SupplyInquiryLineEntity supplyInquiryLine = supplyInquiryLineService.getById(supplyQuotesLineEntity.getInquiryLineId());
-            SupplyInquiryLineVO supplyInquiryLineVO = new SupplyInquiryLineVO();
-            BeanUtils.copyProperties(supplyInquiryLine, supplyInquiryLineVO);
-            supplyGoodsAndSupInfoVO.setSupplyInquiryLineVO(supplyInquiryLineVO);
-
-            SupplyQuotesHeadEntity supplyQuotesHeadEntity = supplyQuotesHeadService.getOne(new QueryWrapper<SupplyQuotesHeadEntity>().lambda().eq(SupplyQuotesHeadEntity::getInquiryHeadId, supplyInquiryLine.getInquiryHeadId())
-                    .eq(SupplyQuotesHeadEntity::getSupplyId, supplyQuotesLineEntity.getSupplyId()));
-            SupplyQuotesHeadVO supplyQuotesHeadVO = new SupplyQuotesHeadVO();
-            BeanUtils.copyProperties(supplyQuotesHeadEntity, supplyQuotesHeadVO);
-            supplyGoodsAndSupInfoVO.setSupplyQuotesHeadVO(supplyQuotesHeadVO);
-
-            supplyGoodsAndSupInfoVOList.add(supplyGoodsAndSupInfoVO);
-        }
-        supplierQuotesListResp.setSupplyGoodsAndSupInfoVOList(supplyGoodsAndSupInfoVOList);
-        return ResponseUtil.ok(supplierQuotesListResp);
+//        List<SupplyQuotesLineEntity> supplyQuotesLineEntities = supplyQuotesLineMapper.selectBatchIds(supplierQuotesListReq.getQuotesList());
+//        if (CollectionUtils.isEmpty(supplyQuotesLineEntities)) {
+//            throw new BusinessException(120_000, "未找到供应商报价信息");
+//        }
+//
+//        SupplyInquiryHeadEntity supplyInquiryHeadEntity = supplyInquiryHeadService.getById(supplyQuotesLineEntities.get(0).getInquiryHeadId());
+//        SupplierQuotesResp supplierQuotesListResp = new SupplierQuotesResp();
+//        BeanUtils.copyProperties(supplyInquiryHeadEntity, supplierQuotesListResp);
+//        List<SupplyGoodsAndSupInfoVO> supplyGoodsAndSupInfoVOList = new ArrayList<>();
+//
+//        for (SupplyQuotesLineEntity supplyQuotesLineEntity : supplyQuotesLineEntities) {
+//            SupplyGoodsAndSupInfoVO supplyGoodsAndSupInfoVO = new SupplyGoodsAndSupInfoVO();
+//
+//            SupplyQuotesLineVO supplyQuotesLineVO = new SupplyQuotesLineVO();
+//            BeanUtils.copyProperties(supplyQuotesLineEntity, supplyQuotesLineVO);
+//            supplyGoodsAndSupInfoVO.setSupplyQuotesLineVO(supplyQuotesLineVO);
+//
+//            //获取商品与供应商信息
+//            SupplyInquiryLineEntity supplyInquiryLine = supplyInquiryLineService.getById(supplyQuotesLineEntity.getInquiryLineId());
+//            SupplyInquiryLineVO supplyInquiryLineVO = new SupplyInquiryLineVO();
+//            BeanUtils.copyProperties(supplyInquiryLine, supplyInquiryLineVO);
+//            supplyGoodsAndSupInfoVO.setSupplyInquiryLineVO(supplyInquiryLineVO);
+//
+//            SupplyQuotesHeadEntity supplyQuotesHeadEntity = supplyQuotesHeadService.getOne(new QueryWrapper<SupplyQuotesHeadEntity>().lambda().eq(SupplyQuotesHeadEntity::getInquiryHeadId, supplyInquiryLine.getInquiryHeadId())
+//                    .eq(SupplyQuotesHeadEntity::getSupplyId, supplyQuotesLineEntity.getSupplyId()));
+//            SupplyQuotesHeadVO supplyQuotesHeadVO = new SupplyQuotesHeadVO();
+//            BeanUtils.copyProperties(supplyQuotesHeadEntity, supplyQuotesHeadVO);
+//            supplyGoodsAndSupInfoVO.setSupplyQuotesHeadVO(supplyQuotesHeadVO);
+//
+//            supplyGoodsAndSupInfoVOList.add(supplyGoodsAndSupInfoVO);
+//        }
+//        supplierQuotesListResp.setSupplyGoodsAndSupInfoVOList(supplyGoodsAndSupInfoVOList);
+//        return ResponseUtil.ok(supplierQuotesListResp);
+        return null;
     }
 
     @Override
@@ -2032,6 +2067,22 @@ public class PurchaseServiceImpl implements PurchaseService {
         orderStatisticsResp.setPomTotalCustomNum(pomTotalCustomNum);
         orderStatisticsResp.setPomTotalCustomNumEffect(pomTotalCustomNumEffect);
         return ResponseUtil.ok(orderStatisticsResp);
+    }
+
+    @Override
+    public ResponseBO<List<PomPurchaseApprovalResp>> getListPurchaseInfo(PomPurchaseContractBriefDetailReq req) {
+        List<PomPurchaseContractHead> pomPurchaseContractHeads = pomPurchaseContractHeadMapper.selectList(
+                new LambdaQueryWrapper<PomPurchaseContractHead>().eq(PomPurchaseContractHead::getSalesContractCode, req.getSalesContractHeadCode()));
+        List<PomPurchaseApprovalResp> pomPurchaseApproval = new ArrayList<>();
+        if (ObjectUtil.isNotEmpty(pomPurchaseContractHeads)){
+            pomPurchaseContractHeads.forEach(var->{
+                PomPurchaseApprovalResp pomPurchaseApprovalResp = new PomPurchaseApprovalResp();
+                pomPurchaseApprovalResp.setFromType(var.getFromType());
+                pomPurchaseApprovalResp.setPurchaseContractCode(var.getPurchaseContractCode());
+                pomPurchaseApproval.add(pomPurchaseApprovalResp);
+            });
+        }
+        return ResponseUtil.ok(pomPurchaseApproval);
     }
 
     @Override
