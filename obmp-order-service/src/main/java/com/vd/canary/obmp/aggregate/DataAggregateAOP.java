@@ -487,8 +487,12 @@ public class DataAggregateAOP {
                             if (!aggregateSourceNode.isSingleton()) {
                                 for (Map.Entry<String, PropertyDescriptor> aggregateSourceNodeEntry : aggregateSourceNode.propertyAggregateMap.entrySet()) {
                                     if (aggregateSourceNodeEntry.getKey().equals(bindName)) {
-                                        bindTime.
+                                        bindTime.getAndIncrement();
                                         aggregateSourceNode.setSingleton(true);
+                                        if (bindTime.get() > 1) {
+                                            log.error("数据聚合-聚合对象绑定执行器属性时执行器属性重复,聚合对象={},属性={}", targetNode.sourceClass.getName(), bindName);
+                                            throw new BusinessException(120_000, "数据聚合-解析聚合对象绑定注解异常,执行器属性重复");
+                                        }
                                     }
                                 }
                             }
@@ -744,6 +748,7 @@ public class DataAggregateAOP {
      * 聚合对象
      */
     static class AggregateTargetNode {
+        private final Class<?> sourceClass;
         //Class中所有属性平铺路径List(理论上可访问的属性)
         final List<String> propertyList = new ArrayList<>();
 
@@ -772,7 +777,8 @@ public class DataAggregateAOP {
             return targetBindProperty;
         }
 
-        public AggregateTargetNode() {
+        public AggregateTargetNode(Class<?> sourceClass) {
+            this.sourceClass = sourceClass;
         }
 
         public void initAggregateNode() {
