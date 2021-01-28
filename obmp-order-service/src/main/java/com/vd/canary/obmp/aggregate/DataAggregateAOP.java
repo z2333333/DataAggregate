@@ -462,6 +462,7 @@ public class DataAggregateAOP {
                 String bindSourcePropertyName = "";
                 String bindSourceClassName = "DEFAULT_CLASS_NAME";
                 AggregateTargetBindProperty aggregateTargetBindProperty = null;
+                //todo 在这里构建嵌套属性的层级关系并校验,以List中每个值推断下一个属性(记录每个set进去的值供后续使用)
                 if (field.isAnnotationPresent(DataAggregatePropertyBind.class)) {
                     DataAggregatePropertyBind propertyBind = field.getAnnotation(DataAggregatePropertyBind.class);
                     String bindName = propertyBind.value();
@@ -745,41 +746,32 @@ public class DataAggregateAOP {
 
     /**
      * 重排序类属性数组
-     * todo 重写
      *
      * @param fields
      * @return java.lang.reflect.Field[]
-     * @author zhengxin
+     * @author
      */
     private Field[] reorderField(Field[] fields) {
-        Set<Class<? extends Annotation>> tarAnnotations = Set.of(DataAggregatePropertyBind.class, DataAggregatePropertyMapping.class);
-        Map<Class<?>,List<Field>> fieldMap = new HashMap<>();
-        tarAnnotations.forEach(an -> {
-            fieldMap.put(an, new ArrayList<>());
-
-            for (Field field : fields) {
-                if (field.isAnnotationPresent(an)) {
-                        fieldMap.get(an).add(field);
+        List<Class<? extends Annotation>> an = Arrays.asList(DataAggregatePropertyBind.class, DataAggregatePropertyMapping.class);
+        List<Field> fieldList = new ArrayList<>();
+        Set<Field> unTarFieldList = new HashSet<>();
+        an.forEach(var->{
+            for (int i = 0; i <fields.length ; i++) {
+                Field curField = fields[i];
+                if (curField.isAnnotationPresent(var)){
+                    if (!fieldList.contains(curField)){
+                        fieldList.add(curField);
+                    }
+                    if (unTarFieldList.contains(curField)){
+                        unTarFieldList.remove(curField);
+                    }
+                }else {
+                    unTarFieldList.add(curField);
                 }
             }
         });
 
-        List<Field> fieldList = new ArrayList<>();
-        tarAnnotations.forEach(an -> fieldMap.get(an).forEach(v1 -> {
-            if (!fieldList.contains(v1)) {
-                fieldList.add(v1);
-            }
-        }));
-
-        if (fieldList.size() == 0) {
-            return fields;
-        } else {
-            for (Field field : fields) {
-                if (!fieldList.contains(field)) {
-                    fieldList.add(field);
-                }
-            }
-        }
+        fieldList.addAll(unTarFieldList);
         return fieldList.toArray(new Field[fieldList.size()]);
     }
 
