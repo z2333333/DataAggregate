@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 import java.beans.PropertyDescriptor;
+import java.lang.annotation.Annotation;
 import java.lang.reflect.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -111,7 +112,7 @@ public class DataAggregateAOP {
         //遍历聚合对象中绑定了执行器的属性
         for (Map.Entry<String, List<AggregateSourceNode>> targetPropertyEntry : targetNode.propertyAggregateMap.entrySet()) {
             String curTargetPropertyName = targetPropertyEntry.getKey();
-            //遍历每个属性绑定的所有执行器
+            //遍历属性绑定的所有执行器
             for (AggregateSourceNode sourceNode : targetPropertyEntry.getValue()) {
                 List<AbstractOrderDataAggregate> instances = new ArrayList();
                 Map<String, List<AggregateTargetBindProperty>> classMap = targetNode.bindPropertyMap.get(sourceNode.sourceClass.getName());
@@ -361,6 +362,7 @@ public class DataAggregateAOP {
      * 解析静态Class对象(递归)
      * 约定:聚合对象中属性为自定义类或容器时,为其指定执行器需将
      * 执行器放到属性对应的类名之上(容器为泛型对应的类名)
+     *
      * @param absolutePathName
      * @param clazz
      * @param targetNode
@@ -409,7 +411,7 @@ public class DataAggregateAOP {
             }
         }
 
-        for (Field field : clazz.getDeclaredFields()) {
+        for (Field field : reorderField(clazz.getDeclaredFields())) {
             if (isIgnoreField(field)) {
                 continue;
             }
@@ -497,7 +499,8 @@ public class DataAggregateAOP {
                         sourceNode.setSingleton(true);
                     }
                     aggregateTargetBindProperty = new AggregateTargetBindProperty(bindSourcePropertyName, nextPathName, propertyBind.required(), propertyBind.type(), 0);
-                } else if (field.isAnnotationPresent(DataAggregatePropertyMapping.class)) {
+                }
+                if (field.isAnnotationPresent(DataAggregatePropertyMapping.class)) {
                     DataAggregatePropertyMapping propertyMapping = field.getAnnotation(DataAggregatePropertyMapping.class);
                     String value = propertyMapping.value();
                     String classNameStr = propertyMapping.classNameStr();
@@ -740,6 +743,48 @@ public class DataAggregateAOP {
     }
 
     /**
+     * 重排序类属性数组
+     * todo 重写
+     *
+     * @param fields
+     * @return java.lang.reflect.Field[]
+     * @author zhengxin
+     */
+    private Field[] reorderField(Field[] fields) {
+        Set<Class<? extends Annotation>> tarAnnotations = Set.of(DataAggregatePropertyBind.class, DataAggregatePropertyMapping.class);
+        Map<Class<?>,List<Field>> fieldMap = new HashMap<>();
+        tarAnnotations.forEach(an -> {
+            fieldMap.put(an, new ArrayList<>());
+
+            for (Field field : fields) {
+                if (field.isAnnotationPresent(an)) {
+                        fieldMap.get(an).add(field);
+                }
+            }
+        });
+
+        List<Field> fieldList = new ArrayList<>();
+        tarAnnotations.forEach(an -> {
+            fieldMap.get(an).forEach(v1 -> {
+                if (!fieldList.contains(v1)) {
+                    fieldList.add(v1);
+                }
+            });
+        });
+
+        if (fieldList.size() == 0) {
+            return fields;
+        } else {
+            for (Field field : fields) {
+                if (!fieldList.contains(field)) {
+                    fieldList.add(field);
+                }
+            }
+        }
+        return fieldList.toArray(new Field[fieldList.size()]);
+    }
+
+    /**
      * 聚合对象
      */
     static class AggregateTargetNode {
@@ -747,7 +792,7 @@ public class DataAggregateAOP {
         //Class中所有属性平铺路径List(理论上可访问的属性)
         final List<String> propertyList = new ArrayList<>();
 
-        //需要执行属性执行器map
+        //需要执行执行器map
         //key 聚合对象的相对属性名 val 对应执行器节点解析信息
         //todo 弱引用map
         final Map<String, List<AggregateSourceNode>> propertyAggregateMap = new HashMap<>();
