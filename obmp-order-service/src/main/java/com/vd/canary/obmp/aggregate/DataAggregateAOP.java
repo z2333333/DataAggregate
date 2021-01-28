@@ -151,6 +151,7 @@ public class DataAggregateAOP {
                             if (!sourceNode.isSingleton()) {
                                 //聚合对象:执行器 = 1:n与n:n的情况(n:1时执行器size=1)
                                 if (instances.size() < expectSize) {
+                                    //todo 扩容一次,后续再扩容属性必须为List
                                     //todo 深clone方式
                                     for (int i = instances.size(); i < expectSize; i++) {
                                         instances.add(getOrderDataAggregateInstance(sourceNode));
