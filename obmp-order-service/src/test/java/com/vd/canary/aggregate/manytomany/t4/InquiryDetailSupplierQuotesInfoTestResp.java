@@ -1,7 +1,6 @@
 package com.vd.canary.aggregate.manytomany.t4;
 
 import com.vd.canary.obmp.aggregate.annotation.DataAggregatePropertyBind;
-import com.vd.canary.obmp.aggregate.annotation.DataAggregatePropertyMapping;
 import com.vd.canary.obmp.aggregate.annotation.DataAggregateType;
 import lombok.Data;
 
@@ -25,7 +24,6 @@ public class InquiryDetailSupplierQuotesInfoTestResp {
     /**
      * 推送供方合计
      */
-    @DataAggregatePropertyMapping("headId")
     private int totalQuoteNum;
 
     /**
@@ -49,6 +47,5 @@ public class InquiryDetailSupplierQuotesInfoTestResp {
     private int selfQuoteNum;
 
     @DataAggregatePropertyBind("headId")
-    @DataAggregatePropertyMapping("")
     private String headId;
 }

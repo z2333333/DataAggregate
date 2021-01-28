@@ -139,6 +139,7 @@ public class DataAggregateAOP {
                         buildStatementList = buildStatementList(responseData, new ArrayList(), tarProperty.getAggregateTargetPropertyName(), "", "", "", "read", new ArrayList<>());
                     }
                     //todo 执行器的属性绑定跨层时,先一后多的情况下有问题 -多个属性注解指定多对一时,出现顺序先后问题
+                    //todo 当前是有
                     //注入依赖值
                     if (buildStatementList != null && buildStatementList.size() > 0) {
                         if (instances.size() == 0) {
@@ -764,13 +765,11 @@ public class DataAggregateAOP {
         });
 
         List<Field> fieldList = new ArrayList<>();
-        tarAnnotations.forEach(an -> {
-            fieldMap.get(an).forEach(v1 -> {
-                if (!fieldList.contains(v1)) {
-                    fieldList.add(v1);
-                }
-            });
-        });
+        tarAnnotations.forEach(an -> fieldMap.get(an).forEach(v1 -> {
+            if (!fieldList.contains(v1)) {
+                fieldList.add(v1);
+            }
+        }));
 
         if (fieldList.size() == 0) {
             return fields;
