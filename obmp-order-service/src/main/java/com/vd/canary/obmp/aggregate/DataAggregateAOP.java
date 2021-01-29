@@ -73,9 +73,11 @@ public class DataAggregateAOP {
         log.info("数据聚合(beta日志)-response对象={}", JSONUtil.toJsonStr(response));
         Object responseData = null;
 
-        /* 支持ResponsePageBO<resp>,
+        /* 特性:
+         * 1.支持ResponsePageBO<resp>,
          * ResponseBO<List<resp>>,ResponseBO<resp>结构返回值
          * 及上述类型的resp中任意对象、任意结构的多重嵌套(容器仅限util.List和所有位于com.vd包下的对象)
+         * 2.支持聚合对象绑定任意多个执行器,及每个执行器属性跨对象、嵌套的绑定
          */
         if (response instanceof ResponseBO) {
             responseData = ((ResponseBO) response).getData();
