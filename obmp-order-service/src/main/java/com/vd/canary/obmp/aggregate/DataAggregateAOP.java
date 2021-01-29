@@ -794,6 +794,7 @@ public class DataAggregateAOP {
         final Map<String, Map<String, List<AggregateTargetBindProperty>>> bindPropertyMap = new HashMap<>();
 
         //todo key-聚合对象属性, val-执行器及所有属性绑定分布(List),保持层级关系(下一级扩容时复制上一级的属性),do中直接遍历执行即可
+        //统一层级多个List属性绑定情况报错
         final Map<String, List<AggregatePrepare>> aggregatePrepareMap = new HashMap<>();
 
         public AggregateTargetBindProperty getTarBindProperty(Map<String, List<AggregateTargetBindProperty>> map, String sourcePropertyName, int type) {
