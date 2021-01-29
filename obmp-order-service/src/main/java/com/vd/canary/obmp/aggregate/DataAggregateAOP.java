@@ -1017,32 +1017,48 @@ public class DataAggregateAOP {
 
     static class AggregatePrepare {
         private final AggregateSourceNode aggregateSourceNode;
-        //链表结构以支持层级关系?
-        private List<AggregatePrepareNode> aggregatePrepareNodes = new ArrayList<>();
+
+        //执行器属性绑定描述节点
+        private Node descNode;
 
         public AggregatePrepare(AggregateSourceNode var) {
             this.aggregateSourceNode = var;
         }
 
-        public void addAggregatePrepareNode(AggregatePrepareNode node) {
-            this.aggregatePrepareNodes.add(node);
+        public void commonPrepareNode(AggregateBaseNode node) {
+            this.descNode.commonPrepareNodes.add(node);
         }
 
-        public List<AggregatePrepareNode> getAggregatePrepareNodes() {
-            return aggregatePrepareNodes;
+        public Node descNode() {
+            return descNode;
         }
     }
 
-    static class AggregatePrepareNode {
+    static class AggregateBaseNode {
         //执行器属性读写方法
         private final Method method;
 
         //聚合对象属性路径
         private final String targetPropertyPath;
 
-        public AggregatePrepareNode(Method method, String targetPropertyPath) {
+        public AggregateBaseNode(Method method, String targetPropertyPath) {
             this.method = method;
             this.targetPropertyPath = targetPropertyPath;
+        }
+    }
+
+    private static class Node {
+        //普通属性绑定列表
+        private List<AggregateBaseNode> commonPrepareNodes = new ArrayList<>();
+        //list属性绑定列表(多个)
+        private List<Node> linkedPrepareNode = new ArrayList<>();
+        //不存在List类型时为null
+        Node next;
+        Node prev;
+
+        Node(Node prev, Node next) {
+            this.next = next;
+            this.prev = prev;
         }
     }
 
