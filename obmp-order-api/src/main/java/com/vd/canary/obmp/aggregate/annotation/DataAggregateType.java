@@ -30,4 +30,6 @@ public @interface DataAggregateType {
      * @return java.lang.String[]
      */
     String[] classNames() default {};
+
+    //todo 提供别名以支持同个聚合对象下相同执行器多次出现
 }

@@ -22,6 +22,10 @@ public class InquiryDetailSupplierQuotesInfoTestResp {
     private List<InquiryDetailSupplierQuotesInfoTestVO> supplierQuotesInfoVOS;
 
     /**
+     * 供方及供方报价信息
+     */
+    //private List<InquiryDetailSupplierQuotesInfoTestVO> supplierQuotesInfoVOS1;
+    /**
      * 推送供方合计
      */
     private int totalQuoteNum;
