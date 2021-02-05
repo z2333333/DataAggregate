@@ -580,10 +580,15 @@ public class DataAggregateAOP {
     }
 
     private List<AbstractDataAggregate> buildDataAggregate(Object sourceData, AggregatePrepare aggregatePrepare) throws InvocationTargetException, IllegalAccessException, NoSuchMethodException, InstantiationException {
+        Node firstNode = aggregatePrepare.getDescNode();
+        List<AbstractDataAggregate> instances = new ArrayList<>();
+        if (firstNode == null) {
+            return instances;
+        }
         AggregateSourceNode aggregateSourceNode = aggregatePrepare.aggregateSourceNode;
 
         int size;
-        List<Node> nextNodes = aggregatePrepare.getDescNode().next;
+        List<Node> nextNodes = firstNode.next;
         while ((size = nextNodes.size()) > 0) {
             if (size == 1) {
                 nextNodes = nextNodes.get(0).next;
@@ -596,7 +601,6 @@ public class DataAggregateAOP {
 
         Node lastNode = nextNodes.get(0);
         Map<String, AbstractDataAggregate> preValMap = new HashMap<>();
-        List<AbstractDataAggregate> instances = new ArrayList<>();
         for (AggregateBaseNode commonPrepareNode : lastNode.commonPrepareNodes) {
             if (!aggregateSourceNode.isSingleton()) {
                 //根据层级节点计算
@@ -622,7 +626,14 @@ public class DataAggregateAOP {
         }
 
         for (Map.Entry<String, AbstractDataAggregate> preBuildStatementEntry : preValMap.entrySet()) {
+            //todo 为每个执行器遍历所有node
+            Node node = firstNode;
+            do {
+                node = node == firstNode ? node : node.next.get(0);
+                //todo 赋值当前node下的值
 
+
+            } while (node.next.size() > 0);
         }
     }
 
@@ -651,7 +662,7 @@ public class DataAggregateAOP {
                     }
                 }
             }
-        }else {
+        } else {
             //确定执行器绑定关系
             if (!isSingleton) {
                 //根据层级节点计算
@@ -1189,7 +1200,7 @@ public class DataAggregateAOP {
         public boolean addBindVal(Method method, Object val, int index) {
             if (nodeBindValEntry.size() - 1 >= index) {
                 nodeBindValEntry.get(index).put(method, val);
-            }else {
+            } else {
                 Map<Method, Object> map = new HashMap<>();
                 map.put(method, val);
                 nodeBindValEntry.add(map);
