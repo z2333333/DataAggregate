@@ -331,8 +331,8 @@ public class DataAggregateAOP {
             //维护node
             Node curNode = node;
             while (curNode != null) {
-                //todo 根节点的处理
-                if (curNode.curLevelPropertyName.equals(curPath)) {
+                //todo 根节点的处理,write模式的处理
+                if (curNode.curLevelPropertyName.equals(curPath) && curNode.nodeBindValMap.isEmpty()) {
                     if (propertyValue instanceof List) {
                         createNodeLevelData((List<Object>) propertyValue, curNode);
                     } else {
@@ -609,27 +609,28 @@ public class DataAggregateAOP {
 
         Node lastNode = nextNodes.get(0);
         Map<String, AbstractDataAggregate> preValMap = new HashMap<>();
-        for (AggregateBaseNode commonPrepareNode : lastNode.commonPrepareNodes) {
-            if (!aggregateSourceNode.isSingleton()) {
-                //根据层级节点计算
-                //从属性理论路径构建实际访问路径
-                List<String> buildStatementList = buildStatementList(sourceData, new ArrayList(), commonPrepareNode.targetPropertyPath, -1, -1, "", "read", new ArrayList<>(), lastNode);
-                for (int i = 0; i < buildStatementList.size(); i++) {
-                    String buildStatement = buildStatementList.get(i);
-                    if (instances.size() < buildStatementList.size()) {
-                        instances.add(getOrderDataAggregateInstance(aggregateSourceNode));
-                    }
-
-                    //注入依赖值
-                    setActuatorProperty(sourceData, commonPrepareNode.method, commonPrepareNode, buildStatement, instances.get(i));
-                    String preBuildStatement = buildStatement.substring(0, buildStatement.lastIndexOf("."));
-                    if (!preValMap.containsKey(preBuildStatement)) {
-                        preValMap.put(preBuildStatement, instances.get(i));
-                    }
+        //填充根节点绑定值
+        createNodeLevelData(sourceData, firstNode);
+        if (!aggregateSourceNode.isSingleton()) {
+            //根据层级节点计算
+            //从属性理论路径构建实际访问路径
+            List<String> buildStatementList = buildStatementList(sourceData, new ArrayList(), lastNode.commonPrepareNodes.get(0).targetPropertyPath, -1, -1, "", "read", new ArrayList<>(), lastNode);
+            for (int i = 0; i < buildStatementList.size(); i++) {
+                String buildStatement = buildStatementList.get(i);
+                if (instances.size() < buildStatementList.size()) {
+                    instances.add(getOrderDataAggregateInstance(aggregateSourceNode));
                 }
-            } else {
-                //显式指定为单例
+
+                //注入各级依赖值
+
+//                setActuatorProperty(sourceData, commonPrepareNode.method, commonPrepareNode, buildStatement, instances.get(i));
+//                String preBuildStatement = buildStatement.substring(0, buildStatement.lastIndexOf("."));
+//                if (!preValMap.containsKey(preBuildStatement)) {
+//                    preValMap.put(preBuildStatement, instances.get(i));
+//                }
             }
+        } else {
+            //显式指定为单例
         }
 
         for (Map.Entry<String, AbstractDataAggregate> preBuildStatementEntry : preValMap.entrySet()) {
@@ -908,13 +909,14 @@ public class DataAggregateAOP {
         return Objects.hash(list.toArray(new String[fields.length + 2]));
     }
 
-    private void createNodeLevelData(List<Object> source, Node node) {
+    private void createNodeLevelData(Object source, Node node) {
+        List<Object> sources = source instanceof List ? (List<Object>) source : List.of(source);
         for (AggregateBaseNode prepareNode : node.commonPrepareNodes) {
-            for (int i = 0; i < source.size(); i++) {
+            for (int i = 0; i < sources.size(); i++) {
                 Object prepareVal = null;
                 try {
                     String[] tarPaths = prepareNode.targetPropertyPath.split("\\.");
-                    prepareVal = PropertyUtils.getProperty(source.get(i), tarPaths[tarPaths.length - 1]);
+                    prepareVal = PropertyUtils.getProperty(sources.get(i), tarPaths[tarPaths.length - 1]);
                 } catch (IllegalAccessException e) {
                     e.printStackTrace();
                 } catch (InvocationTargetException e) {
