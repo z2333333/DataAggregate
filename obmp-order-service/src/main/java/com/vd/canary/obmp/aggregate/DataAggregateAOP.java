@@ -23,6 +23,8 @@ import java.lang.reflect.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -595,19 +597,7 @@ public class DataAggregateAOP {
         }
         AggregateSourceNode aggregateSourceNode = aggregatePrepare.aggregateSourceNode;
 
-        int size;
-        List<Node> nextNodes = List.of(firstNode);
-        while ((size = nextNodes.size()) > 0 && nextNodes.get(0).next.size() > 0) {
-            if (size == 1) {
-                nextNodes = nextNodes.get(0).next;
-            } else {
-                //issue:执行器属性绑定跨多个List时,最终数应为它们的直积,结合实际应用场景与此时数据反写判断与性能问题,暂不支持该情况
-                log.error("数据聚合-执行器数据绑定解析异常:属性跨List绑定,聚合对象={},执行器={},绑定属性={}", sourceData.getClass().getName(), aggregateSourceNode.sourceClass.getName(), nextNodes.toArray());
-                throw new BusinessException(120_000, "数据聚合-执行器数据绑定解析异常:未支持属性跨List绑定");
-            }
-        }
-
-        Node lastNode = nextNodes.get(0);
+        Node lastNode = aggregatePrepare.getLastNode();
         Map<String, AbstractDataAggregate> preValMap = new HashMap<>();
         //填充根节点绑定值
         createNodeLevelData(sourceData, firstNode);
@@ -621,8 +611,29 @@ public class DataAggregateAOP {
                     instances.add(getOrderDataAggregateInstance(aggregateSourceNode));
                 }
 
-                //注入各级依赖值
-
+                //展开节点注入各级依赖值
+                //todo 以buildStmt为基础,该结果包含各list归属 处理成什么样的数据结构 name-node Map
+                AbstractDataAggregate dataAggregate = instances.get(i);
+                Map<Method, Object>[] maps = filterTarStatementList(buildStatement, aggregatePrepare.nodeMap);
+                for (Map<Method, Object> methodObjectMap : maps) {
+                    for (Map.Entry<Method, Object> methodObjectEntry : methodObjectMap.entrySet()) {
+                        methodObjectEntry.getKey().invoke(dataAggregate, methodObjectEntry.getValue());
+                    }
+                }
+                /*Node nextNode = firstNode;
+                while (nextNode != null) {
+                    //todo 根节点的处理,write模式的处理
+                    if (curNode.curLevelPropertyName.equals(curPath) && curNode.nodeBindValMap.isEmpty()) {
+                        if (propertyValue instanceof List) {
+                            createNodeLevelData((List<Object>) propertyValue, curNode);
+                        } else {
+                            createNodeLevelData(List.of(propertyValue), curNode);
+                        }
+                        break;
+                    } else {
+                        nextNode = nextNode.prev;
+                    }
+                }*/
 //                setActuatorProperty(sourceData, commonPrepareNode.method, commonPrepareNode, buildStatement, instances.get(i));
 //                String preBuildStatement = buildStatement.substring(0, buildStatement.lastIndexOf("."));
 //                if (!preValMap.containsKey(preBuildStatement)) {
@@ -746,22 +757,30 @@ public class DataAggregateAOP {
     }
 
     /***
-     * 从实际可访问路径中匹配目标属性
+     * 从实际可访问路径中匹配目标节点
      *
-     * @param actualTarStatementList
-     * @param tarProperty
-     * @return java.util.List<java.lang.String>
+     * @param actualTarStatement
      * @author zhengxin
      */
-    private List<String> filterTarStatementList(List<String> actualTarStatementList, String tarProperty) {
-        return actualTarStatementList.stream().filter(actualPath -> {
-            //过滤掉中括号以及里面的值
-            if (actualPath.replaceAll("\\[.*?\\]", "").equals(tarProperty)) {
-                return true;
-            } else {
-                return false;
+    private Map<Method, Object>[] filterTarStatementList(String actualTarStatement, Map<String,Node> nodeMap) {
+        //todo 省略处理字符串,放到buildstatement中?
+        Pattern p = Pattern.compile("(\\[[^\\]]*\\])");
+        String[] statementSplit = actualTarStatement.split("\\.");
+        Map<Method, Object>[] maps = new HashMap[statementSplit.length];
+        for (int i = 0; i < statementSplit.length; i++) {
+            String str = statementSplit[i];
+            Matcher m = p.matcher(str);
+            if (m.find()) {
+                String indexStr = m.group().substring(1, m.group().length() - 1);
+                String nodeName = str.substring(0, str.lastIndexOf("["));
+                Node node = nodeMap.get(nodeName);
+                Map<Method, Object> methodObjectMap = node.nodeBindValMap.get(Integer.valueOf(indexStr));
+                maps[i] = methodObjectMap;
             }
-        }).collect(Collectors.toList());
+        }
+
+        maps[maps.length - 1] = nodeMap.get("~").nodeBindValMap.get(0);
+        return maps;
     }
 
     /***
@@ -1076,6 +1095,7 @@ public class DataAggregateAOP {
                             }
                         }
                     }
+                    aggregatePrepare.iniAggregatePrepare(sourceClass);
                 }
             }
         }
@@ -1172,9 +1192,36 @@ public class DataAggregateAOP {
 
         //执行器属性绑定描述节点
         private Node descNode;
+        private Node lastNode;
+
+        private Map<String,Node> nodeMap = new HashMap<>();
 
         public AggregatePrepare(AggregateSourceNode var) {
             this.aggregateSourceNode = var;
+        }
+
+        public void iniAggregatePrepare(Class<?> sourceClass) {
+            int size;
+            Node topNode;
+            List<Node> nextNodes = List.of(descNode);
+            while ((size = nextNodes.size()) > 0) {
+                if (size == 1) {
+                    topNode = nextNodes.get(0);
+                    if (!nodeMap.containsKey(topNode.curLevelPropertyName)) {
+                        nodeMap.put(topNode.curLevelPropertyName, topNode);
+                    }
+                    if (topNode.next.size() > 0) {
+                        nextNodes = nextNodes.get(0).next;
+                    }else {
+                        break;
+                    }
+                } else {
+                    //issue:执行器属性绑定跨多个List时,最终数应为它们的直积,结合实际应用场景与此时数据反写判断与性能问题,暂不支持该情况
+                    log.error("数据聚合-执行器数据绑定解析异常:属性跨List绑定,聚合对象={},执行器={},绑定属性={}", sourceClass.getName(), aggregateSourceNode.sourceClass.getName(), nextNodes.toArray());
+                    throw new BusinessException(120_000, "数据聚合-执行器数据绑定解析异常:未支持属性跨List绑定");
+                }
+            }
+            this.lastNode = nextNodes.get(0);
         }
 
         public void addCommonPrepareNode(AggregateBaseNode node) {
@@ -1183,6 +1230,10 @@ public class DataAggregateAOP {
 
         public Node getDescNode() {
             return descNode;
+        }
+
+        public Node getLastNode() {
+            return lastNode;
         }
     }
 
