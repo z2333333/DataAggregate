@@ -112,11 +112,14 @@ public class DataAggregateAOP {
         AggregateTargetNode targetNode = AggregateTargetMap.get(clazz.getName());
 
         //todo 复杂情况的值绑定状态,如resp.xx+resp.list.xx绑定到同一个执行器
+        //遍历聚合对象中绑定了执行器的属性
         for (Map.Entry<String, List<AggregatePrepare>> propertyPrepareEntity : targetNode.aggregatePrepareMap.entrySet()) {
             String curTargetPropertyName = propertyPrepareEntity.getKey();
-            //遍历聚合对象当前属性的执行器描述节点
+
             for (AggregatePrepare aggregatePrepare : propertyPrepareEntity.getValue()) {
+                //为执行器描述节点建立当前resp的层级数据
                 List<AbstractDataAggregate> dataAggregates = buildDataAggregate(responseData, aggregatePrepare);
+
             }
         }
         //遍历聚合对象中绑定了执行器的属性
@@ -335,11 +338,7 @@ public class DataAggregateAOP {
             while (curNode != null) {
                 //todo 根节点的处理,write模式的处理
                 if (curNode.curLevelPropertyName.equals(curPath) && curNode.nodeBindValMap.isEmpty()) {
-                    if (propertyValue instanceof List) {
-                        createNodeLevelData((List<Object>) propertyValue, curNode);
-                    } else {
-                        createNodeLevelData(List.of(propertyValue), curNode);
-                    }
+                    createNodeLevelData(propertyValue, curNode);
                     break;
                 } else {
                     curNode = curNode.prev;
@@ -612,7 +611,6 @@ public class DataAggregateAOP {
                 }
 
                 //展开节点注入各级依赖值
-                //todo 以buildStmt为基础,该结果包含各list归属 处理成什么样的数据结构 name-node Map
                 AbstractDataAggregate dataAggregate = instances.get(i);
                 Map<Method, Object>[] maps = filterTarStatementList(buildStatement, aggregatePrepare.nodeMap);
                 for (Map<Method, Object> methodObjectMap : maps) {
@@ -620,41 +618,9 @@ public class DataAggregateAOP {
                         methodObjectEntry.getKey().invoke(dataAggregate, methodObjectEntry.getValue());
                     }
                 }
-                /*Node nextNode = firstNode;
-                while (nextNode != null) {
-                    //todo 根节点的处理,write模式的处理
-                    if (curNode.curLevelPropertyName.equals(curPath) && curNode.nodeBindValMap.isEmpty()) {
-                        if (propertyValue instanceof List) {
-                            createNodeLevelData((List<Object>) propertyValue, curNode);
-                        } else {
-                            createNodeLevelData(List.of(propertyValue), curNode);
-                        }
-                        break;
-                    } else {
-                        nextNode = nextNode.prev;
-                    }
-                }*/
-//                setActuatorProperty(sourceData, commonPrepareNode.method, commonPrepareNode, buildStatement, instances.get(i));
-//                String preBuildStatement = buildStatement.substring(0, buildStatement.lastIndexOf("."));
-//                if (!preValMap.containsKey(preBuildStatement)) {
-//                    preValMap.put(preBuildStatement, instances.get(i));
-//                }
             }
         } else {
             //显式指定为单例
-        }
-
-        for (Map.Entry<String, AbstractDataAggregate> preBuildStatementEntry : preValMap.entrySet()) {
-            //todo 为每个执行器遍历所有node
-            Node node = firstNode;
-            do {
-                node = (node == firstNode) ? node : node.next.get(0);
-                //todo 赋值当前node下的值
-                for (AggregateBaseNode prepareNode : node.commonPrepareNodes) {
-
-                }
-
-            } while (node.next.size() > 0);
         }
 
         return instances;
