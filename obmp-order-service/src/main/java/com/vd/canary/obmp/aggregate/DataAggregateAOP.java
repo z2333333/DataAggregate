@@ -118,70 +118,7 @@ public class DataAggregateAOP {
 
             for (AggregatePrepare aggregatePrepare : propertyPrepareEntity.getValue()) {
                 //为执行器描述节点建立当前resp的层级数据
-                List<AbstractDataAggregate> dataAggregates = buildDataAggregate(responseData, aggregatePrepare);
-
-            }
-        }
-        //遍历聚合对象中绑定了执行器的属性
-        for (Map.Entry<String, List<AggregateSourceNode>> targetPropertyEntry : targetNode.propertyAggregateMap.entrySet()) {
-            String curTargetPropertyName = targetPropertyEntry.getKey();
-            //遍历属性绑定的所有执行器
-            for (AggregateSourceNode sourceNode : targetPropertyEntry.getValue()) {
-                List<AbstractDataAggregate> instances = new ArrayList();
-                Map<String, List<AggregateTargetBindProperty>> classMap = targetNode.bindPropertyMap.get(sourceNode.sourceClass.getName());
-                Map<String, List<AggregateTargetBindProperty>> defaultClassMap = targetNode.bindPropertyMap.get("DEFAULT_CLASS_NAME");
-
-                //遍历执行器属性,如果属性在聚合对象中存在绑定关系,则从聚合对象中获取对应的值注入到执行器中的属性
-                for (Map.Entry<String, PropertyDescriptor> entry : sourceNode.propertyAggregateMap.entrySet()) {
-                    String sourcePropertyName = entry.getKey();
-
-                    if (sourceNode.resourcePropertyMap.containsKey(sourcePropertyName)) {
-                        //该属性需要从spring中获取
-                        continue;
-                    }
-                    Method writeMethod = entry.getValue().getWriteMethod();
-                    List<String> buildStatementList = null;
-                    AggregateTargetBindProperty tarProperty;
-
-                    //从聚合对象解析关系中获取对应属性的属性平铺路径(理论访问路径)
-                    tarProperty = targetNode.getTarBindProperty(classMap, sourcePropertyName, 0);
-                    tarProperty = tarProperty == null ? targetNode.getTarBindProperty(defaultClassMap, sourcePropertyName, 0) : tarProperty;
-
-                    if (tarProperty != null && tarProperty.getAggregateTargetPropertyName() != null) {
-                        //从属性理论访问路径构建实际访问路径
-                        buildStatementList = buildStatementList(responseData, new ArrayList(), tarProperty.getAggregateTargetPropertyName(), -1, -1, "", "read", new ArrayList<>(), null);
-                    }
-                    //todo 执行器的属性绑定跨层时,先一后多的情况下有问题 -多个属性注解指定多对一时,出现顺序先后问题
-                    //todo 当前是有
-                    //注入依赖值
-                    if (buildStatementList != null && buildStatementList.size() > 0) {
-                        if (instances.size() == 0) {
-                            instances.add(getOrderDataAggregateInstance(sourceNode));
-                        }
-
-                        int expectSize = buildStatementList.size();
-                        //从多原则
-                        if (expectSize > 1) {
-                            //确定对应关系
-                            if (!sourceNode.isSingleton()) {
-                                //聚合对象:执行器 = 1:n与n:n的情况(n:1时执行器size=1)
-                                if (instances.size() < expectSize) {
-                                    //todo 扩容一次,后续再扩容属性必须为List
-                                    //todo 深clone方式
-                                    for (int i = instances.size(); i < expectSize; i++) {
-                                        instances.add(getOrderDataAggregateInstance(sourceNode));
-                                    }
-                                }
-                            }
-
-                            for (int i = 0; i < expectSize; i++) {
-                                //setActuatorProperty(responseData, writeMethod, tarProperty, buildStatementList.get(i), instances.get(i));
-                            }
-                        } else {
-                            //setActuatorProperty(responseData, writeMethod, tarProperty, buildStatementList.get(0), instances.get(0));
-                        }
-                    }
-                }
+                List<AbstractDataAggregate> instances = buildDataAggregate(responseData, aggregatePrepare);
 
                 for (int i = 0; i < instances.size(); i++) {
                     AbstractDataAggregate dataAggregate = instances.get(i);
@@ -192,6 +129,7 @@ public class DataAggregateAOP {
                     dataAggregate.doDataAggregate();
 
                     //数据反写
+                    AggregateSourceNode sourceNode = aggregatePrepare.aggregateSourceNode;
                     for (String waitWriteVal : sourceNode.allowPropertyList) {
                         //在聚合对象中查找属性对应的访问路径
                         //@DataAggregateType注解所在层级优先
@@ -201,7 +139,6 @@ public class DataAggregateAOP {
                         List<String> targetStatementList = buildStatementList(responseData, new ArrayList(), possiblePath, -1, -1, "", "write", new ArrayList<>(), null);
 
                         if (targetStatementList.size() == 0) {
-                            //todo 分支未测
                             //完整查找
                             //通过聚合对象理论可访问路径构建实际可访问路径
                             List<String> actualPathList = new ArrayList<>();
@@ -212,7 +149,7 @@ public class DataAggregateAOP {
                             if (actualPathList.size() == 0) {
                                 continue;
                             }
-                            targetStatementList = findTarStatementList(actualPathList, targetPropertyEntry.getKey(), waitWriteVal);
+                            targetStatementList = findTarStatementList(actualPathList, curTargetPropertyName, waitWriteVal);
                         }
 
                         if (targetStatementList.size() > 0) {
@@ -228,9 +165,8 @@ public class DataAggregateAOP {
                             } catch (NoSuchMethodException e) {
                                 //抛出该异常的情况
                                 //1.issue:lombok@Accessors(chain = true)注解生成的set方法无法被此工具类识别
-                                //2.buildStatementList中对write模式的处理(聚合对象中不需要执行器中的某些属性,但write模式中加进来了)
-                                //todo 第2点的处理存在矛盾,需重新评估
-                                log.error("数据聚合-当前反写的字段不存在,路径={}", targetStatement, e);
+                                //2.buildStatementList中对write模式的处理(聚合对象中不需要执行器中的某些属性,但write模式中加进来了)-已取消
+                                log.error("数据聚合-数据反写异常,无法获取属性对应setter方法,路径={}", targetStatement, e);
                             }
                         }
                     }
@@ -309,22 +245,26 @@ public class DataAggregateAOP {
         finalPath = finalPath.charAt(0) == '.' ? finalPath.substring(1) : finalPath;
         finalPath = transferPrefixIndex == -1 ? finalPath : "[" + transferPrefixIndex + "]" + "." + finalPath;
 
-        Object propertyValue = null;
+        Object propertyValue;
         try {
             //todo 用检测属性的方法提高性能
             propertyValue = PropertyUtils.getProperty(source, curPath);
         } catch (NoSuchMethodException e) {
-            //注:Bean拷贝后类型为List的属性的实际类型会变成source中相同属性名的类型而不是target中对应属性名泛型指定的类型
+            //注:Bean拷贝工具在source和tar下存在相同属性名且类型为List但其指定的泛型不同时,拷贝后List的的实际泛型会变成source的泛型(即该情况下仅对比了属性名而不会考虑实际泛型不同)
             //issue 1.理论上存在该属性访问路径(parsingClass解析),实际上访问不到(list中的class变了) 2.理论无-实际有的情况无需考虑
-            //写模式加入到路径中(属性在最外层(或嵌套属性的最外层)的情况)
-            if (Mode.equals("write")) {
-                statementList.add(finalPath);
-                //嵌套属性最外层为null时里层属性直接忽略,防止重复报错
-                ignoreList.add(finalPath);
-                return statementList;
-            }
+            //Bean拷贝时需避免该情况
+            //写模式加入到路径中()
+//            if (Mode.equals("write")) {
+//                statementList.add(finalPath);
+//                //嵌套属性最外层为null时里层属性直接忽略,防止重复报错
+//                ignoreList.add(finalPath);
+//                return statementList;
+//            }
+            log.error("数据聚合-聚合对象属性实际访问路径解析异常,无法获取当前属性的读方法(确无该属性或Bean拷贝后属性发生变化),聚合对象={},属性路径={}", source.getClass().getName(), curPath);
+            return statementList;
         } catch (NestedNullException e) {
             //多重嵌套属性访问里层属性时外层属性为空
+            log.error("数据聚合-聚合对象属性实际访问路径解析异常,多重嵌套属性访问里层属性时外层属性为空,聚合对象={},属性路径={}", source.getClass().getName(), curPath);
             return statementList;
         }
         if (propertyValue == null) {
@@ -728,7 +668,7 @@ public class DataAggregateAOP {
      * @param actualTarStatement
      * @author zhengxin
      */
-    private Map<Method, Object>[] filterTarStatementList(String actualTarStatement, Map<String,Node> nodeMap) {
+    private Map<Method, Object>[] filterTarStatementList(String actualTarStatement, Map<String, Node> nodeMap) {
         //todo 省略处理字符串,放到buildstatement中?
         Pattern p = Pattern.compile("(\\[[^\\]]*\\])");
         String[] statementSplit = actualTarStatement.split("\\.");
@@ -1160,7 +1100,7 @@ public class DataAggregateAOP {
         private Node descNode;
         private Node lastNode;
 
-        private Map<String,Node> nodeMap = new HashMap<>();
+        private Map<String, Node> nodeMap = new HashMap<>();
 
         public AggregatePrepare(AggregateSourceNode var) {
             this.aggregateSourceNode = var;
@@ -1178,7 +1118,7 @@ public class DataAggregateAOP {
                     }
                     if (topNode.next.size() > 0) {
                         nextNodes = nextNodes.get(0).next;
-                    }else {
+                    } else {
                         break;
                     }
                 } else {
