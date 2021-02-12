@@ -67,6 +67,7 @@ public class DataAggregateAOP {
      * @return void
      * @author zhengxin
      */
+    //todo 关键性能节点多线程
     @SneakyThrows
     @AfterReturning(pointcut = "resultAop()", returning = "response")
     public void doDataAggregate(Object response) {
@@ -120,6 +121,7 @@ public class DataAggregateAOP {
                 //为执行器描述节点建立当前resp的层级数据
                 List<AbstractDataAggregate> instances = buildDataAggregate(responseData, aggregatePrepare);
 
+                Map<String, List<String>> statementCacheMap = new HashMap<>();
                 for (int i = 0; i < instances.size(); i++) {
                     AbstractDataAggregate dataAggregate = instances.get(i);
                     //执行聚合方法 todo 代理
@@ -131,25 +133,31 @@ public class DataAggregateAOP {
                     //数据反写
                     AggregateSourceNode sourceNode = aggregatePrepare.aggregateSourceNode;
                     for (String waitWriteVal : sourceNode.allowPropertyList) {
-                        //在聚合对象中查找属性对应的访问路径
-                        //@DataAggregateType注解所在层级优先
-                        //~表示根路径
-                        String possiblePath = curTargetPropertyName.equals("~") ? waitWriteVal : curTargetPropertyName + "." + waitWriteVal;
-                        //todo 1.可以在read模式时一起返回write,做区分,这样只用调用一次 2.当对象为List时相同属性的实际路径只用解析一次(当前解析n次)
-                        List<String> targetStatementList = buildStatementList(responseData, new ArrayList(), possiblePath, -1, -1, "", "write", new ArrayList<>(), null);
+                        List<String> targetStatementList;
+                        if (!statementCacheMap.containsKey(waitWriteVal)) {
+                            //在聚合对象中查找属性对应的访问路径
+                            //@DataAggregateType注解所在层级优先
+                            //~表示根路径
+                            String possiblePath = curTargetPropertyName.equals("~") ? waitWriteVal : curTargetPropertyName + "." + waitWriteVal;
+                            //todo 1.可以在read模式时一起返回write,做区分,这样只用调用一次 2.当对象为List时相同属性的实际路径只用解析一次(当前解析n次)
+                            targetStatementList = buildStatementList(responseData, new ArrayList(), possiblePath, -1, -1, "", "write", new ArrayList<>(), null);
 
-                        if (targetStatementList.size() == 0) {
-                            //完整查找
-                            //通过聚合对象理论可访问路径构建实际可访问路径
-                            List<String> actualPathList = new ArrayList<>();
-                            for (String theoryPath : targetNode.propertyList) {
-                                List buildStatementList = buildStatementList(responseData, new ArrayList(), theoryPath, -1, -1, "", "write", new ArrayList<>(), null);
-                                actualPathList.addAll(buildStatementList);
+                            if (targetStatementList.size() == 0) {
+                                //完整查找
+                                //通过聚合对象理论可访问路径构建实际可访问路径
+                                List<String> actualPathList = new ArrayList<>();
+                                for (String theoryPath : targetNode.propertyList) {
+                                    List buildStatementList = buildStatementList(responseData, new ArrayList(), theoryPath, -1, -1, "", "write", new ArrayList<>(), null);
+                                    actualPathList.addAll(buildStatementList);
+                                }
+                                if (actualPathList.size() == 0) {
+                                    continue;
+                                }
+                                targetStatementList = findTarStatementList(actualPathList, curTargetPropertyName, waitWriteVal);
                             }
-                            if (actualPathList.size() == 0) {
-                                continue;
-                            }
-                            targetStatementList = findTarStatementList(actualPathList, curTargetPropertyName, waitWriteVal);
+                            statementCacheMap.put(waitWriteVal, targetStatementList);
+                        } else {
+                            targetStatementList = statementCacheMap.get(waitWriteVal);
                         }
 
                         if (targetStatementList.size() > 0) {
