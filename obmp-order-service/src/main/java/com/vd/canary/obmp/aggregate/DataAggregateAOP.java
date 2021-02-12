@@ -551,6 +551,8 @@ public class DataAggregateAOP {
         if (!aggregateSourceNode.isSingleton()) {
             //根据层级节点计算
             //从属性理论路径构建实际访问路径
+            //todo 最里层的lineId数量期望为4,当前只有2  当数量为4时上层与下层之间如何对应? 当前node层级关系是平铺的,缺失了与上一级的被包含关系
+            //todo buildStatementList里存在对应关系,node下级bindMap直接用buildStatementList的关系作为key?
             List<String> buildStatementList = buildStatementList(sourceData, new ArrayList(), lastNode.commonPrepareNodes.get(0).targetPropertyPath, -1, -1, "", "read", new ArrayList<>(), lastNode);
             for (int i = 0; i < buildStatementList.size(); i++) {
                 String buildStatement = buildStatementList.get(i);
