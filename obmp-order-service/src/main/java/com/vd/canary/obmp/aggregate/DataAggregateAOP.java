@@ -121,7 +121,9 @@ public class DataAggregateAOP {
                 //为执行器描述节点建立当前resp的层级数据
                 List<AbstractDataAggregate> instances = buildDataAggregate(responseData, aggregatePrepare);
 
-                Map<String, List<String>> statementCacheMap = new HashMap<>();
+                AggregateSourceNode sourceNode = aggregatePrepare.aggregateSourceNode;
+                Map<String, Object> reWriteCacheMap = new HashMap<>();
+                Map<String, List<String>> statementCacheMap = new HashMap<>(sourceNode.allowPropertyList.size());
                 for (int i = 0; i < instances.size(); i++) {
                     AbstractDataAggregate dataAggregate = instances.get(i);
                     //执行聚合方法 todo 代理
@@ -131,8 +133,11 @@ public class DataAggregateAOP {
                     dataAggregate.doDataAggregate();
 
                     //数据反写
-                    AggregateSourceNode sourceNode = aggregatePrepare.aggregateSourceNode;
                     for (String waitWriteVal : sourceNode.allowPropertyList) {
+                        //对于执行器任意自定义属性,其上层被反写后忽略所有下层
+                        if (isReWrite(waitWriteVal, reWriteCacheMap)) {
+                            continue;
+                        }
                         List<String> targetStatementList;
                         if (!statementCacheMap.containsKey(waitWriteVal)) {
                             //在聚合对象中查找属性对应的访问路径
@@ -143,6 +148,7 @@ public class DataAggregateAOP {
                             targetStatementList = buildStatementList(responseData, new ArrayList(), possiblePath, -1, -1, "", "write", new ArrayList<>(), null);
 
                             if (targetStatementList.size() == 0) {
+                                //todo 完整查找还要考虑数量匹配的问题（到上层可能找到了但是与执行器数量可能对不上，会导致不断覆盖）
                                 //完整查找
                                 //通过聚合对象理论可访问路径构建实际可访问路径
                                 List<String> actualPathList = new ArrayList<>();
@@ -161,8 +167,10 @@ public class DataAggregateAOP {
                         }
 
                         if (targetStatementList.size() > 0) {
+                            reWriteCacheMap.put(waitWriteVal, null);
                             PropertyDescriptor propertyDescriptor = sourceNode.propertyAggregateMap.get(waitWriteVal);
                             Object val = propertyDescriptor.getReadMethod().invoke(dataAggregate);
+
                             //todo 当前适配1:1与n:n
                             //实际可访问路径与执行器的index有序且对应,直接执行
                             //String filterTarStatement = filterTarStatementList(targetStatementList, i);
@@ -178,6 +186,7 @@ public class DataAggregateAOP {
                             }
                         }
                     }
+                    reWriteCacheMap.clear();
                 }
             }
         }
@@ -557,8 +566,6 @@ public class DataAggregateAOP {
         if (!aggregateSourceNode.isSingleton()) {
             //根据层级节点计算
             //从属性理论路径构建实际访问路径
-            //todo 最里层的lineId数量期望为4,当前只有2  当数量为4时上层与下层之间如何对应? 当前node层级关系是平铺的,缺失了与上一级的被包含关系
-            //todo buildStatementList里存在对应关系,node下级bindMap直接用buildStatementList的关系作为key?
             List<String> buildStatementList = buildStatementList(sourceData, new ArrayList(), lastNode.commonPrepareNodes.get(0).targetPropertyPath, -1, -1, "", "read", new ArrayList<>(), lastNode);
             for (int i = 0; i < buildStatementList.size(); i++) {
                 String buildStatement = buildStatementList.get(i);
@@ -573,17 +580,21 @@ public class DataAggregateAOP {
                 String str = "";
                 String[] statementSplit = buildStatement.split("\\.");
                 for (int j = 0; j < statementSplit.length; j++) {
-                    int index = statementSplit[j].lastIndexOf("[");
+                    String sj = statementSplit[j];
+                    int index = sj.lastIndexOf("[");
                     Map<Method, Object> methodObjectMap;
                     if (index == -1) {
                         //处理根节点
                         methodObjectMap = aggregatePrepare.nodeMap.get("~").nodeBindValMap.get("~");
                     }else {
-                        str = j == 0 ? statementSplit[j] : str + "." + statementSplit[j];
-                        String nodeName = statementSplit[j].substring(0, index);
+                        str = j == 0 ? sj : str + "." + sj;
+                        String nodeName = sj.substring(0, index);
                         Node node = aggregatePrepare.nodeMap.get(nodeName);
                         methodObjectMap = node.nodeBindValMap.get(str);
 
+                    }
+                    if (methodObjectMap == null) {
+                        continue;
                     }
                     for (Map.Entry<Method, Object> methodObjectEntry : methodObjectMap.entrySet()) {
                         methodObjectEntry.getKey().invoke(dataAggregate, methodObjectEntry.getValue());
@@ -826,6 +837,15 @@ public class DataAggregateAOP {
                 }
             }
         }
+    }
+
+    private boolean isReWrite(String curReWriteProperty, Map<String, Object> cacheMap) {
+        for (String key : cacheMap.keySet()) {
+            if (curReWriteProperty.startsWith(key)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
