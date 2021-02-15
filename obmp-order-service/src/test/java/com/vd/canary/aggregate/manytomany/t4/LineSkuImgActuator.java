@@ -25,7 +25,6 @@ public class LineSkuImgActuator extends AbstractDataAggregate {
 
     private String skuPic;
 
-
     @Override
     public void doDataAggregate(Object... args) {
         System.out.println("根据商品id和业务key从文件服务获取url...");

@@ -8,13 +8,13 @@ import com.vd.canary.obmp.aggregate.DataAggregateAOP;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
 /**
- * 复杂场景测试1
+ * 复杂场景测试4
  * 特点:
- * 1.绑定属性位于多级List嵌套容器中
- * 2.执行器反写时为多对多关系
+ * 1.绑定属性位于多级List嵌套容器中且跨对象(list)绑定
  *
  * @author zx
  * @date 2021/1/14 16:23
@@ -36,5 +36,10 @@ public class ManyToManyTest4 {
 
         assertNotNull(responseBO.getData());
         assertNotNull(responseBO.getData().getSupplierQuotesInfoVOS());
+
+        assertEquals("我是lineId:1306554013907767601的url", responseBO.getData().getSupplierQuotesInfoVOS().get(0).getSupplyQuotesLineVOS().get(0).getSkuPic());
+        assertEquals("我是lineId:1306554013907768601的url", responseBO.getData().getSupplierQuotesInfoVOS().get(0).getSupplyQuotesLineVOS().get(1).getSkuPic());
+        assertEquals("我是lineId:1306554013907767600的url", responseBO.getData().getSupplierQuotesInfoVOS().get(1).getSupplyQuotesLineVOS().get(0).getSkuPic());
+        assertEquals("我是lineId:1306554013907768600的url", responseBO.getData().getSupplierQuotesInfoVOS().get(1).getSupplyQuotesLineVOS().get(1).getSkuPic());
     }
 }
