@@ -581,8 +581,14 @@ public class DataAggregateAOP {
                 String[] statementSplit = buildStatement.split("\\.");
                 for (int j = 0; j < statementSplit.length; j++) {
                     String sj = statementSplit[j];
-                    int index = sj.lastIndexOf("[");
+                    if (sj.charAt(0) == '[') {
+                        //处理[].xxx的情况
+                        str = sj;
+                        continue;
+                    }
+
                     Map<Method, Object> methodObjectMap;
+                    int index = sj.lastIndexOf("[");
                     if (index == -1) {
                         //处理根节点
                         methodObjectMap = aggregatePrepare.nodeMap.get("~").nodeBindValMap.get("~");
@@ -591,7 +597,6 @@ public class DataAggregateAOP {
                         String nodeName = sj.substring(0, index);
                         Node node = aggregatePrepare.nodeMap.get(nodeName);
                         methodObjectMap = node.nodeBindValMap.get(str);
-
                     }
                     if (methodObjectMap == null) {
                         continue;

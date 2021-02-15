@@ -14,7 +14,7 @@ import static org.junit.Assert.assertNotNull;
 /**
  * 复杂场景测试4
  * 特点:
- * 1.绑定属性位于多级List嵌套容器中且跨对象(list)绑定
+ * 1.绑定属性位于多级List嵌套容器中且跨对象(list)绑定,需按照层级关系赋值执行器
  *
  * @author zx
  * @date 2021/1/14 16:23
