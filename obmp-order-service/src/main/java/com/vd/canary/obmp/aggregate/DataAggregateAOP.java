@@ -366,15 +366,15 @@ public class DataAggregateAOP {
         targetPropertyName = targetPropertyName.charAt(0) == '.' ? targetPropertyName.substring(1) : targetPropertyName;
 
         if (clazz.isAnnotationPresent(DataAggregateType.class)) {
+
             Class[] sourceClass = clazz.getAnnotation(DataAggregateType.class).value();
             if (sourceClass.length == 0) {
                 //根据全限定类名加载class
                 String[] classNames = clazz.getAnnotation(DataAggregateType.class).classNames();
                 if (classNames.length > 0) {
                     List<Class> sourceClassList = new ArrayList();
-                    int i = 0;
                     try {
-                        for (; i < classNames.length; i++) {
+                        for (int i = 0; i < classNames.length; i++) {
                             sourceClassList.add(Class.forName(classNames[i]));
                         }
                     } catch (ClassNotFoundException classNotFoundException) {
@@ -508,7 +508,7 @@ public class DataAggregateAOP {
                     }
                     //todo 1.字段-在聚合对象中查找当前层级的同名字段 2.属性-查找当前层级同名属性 3.剩余字段如何处理?
                     bindSourcePropertyName = value;
-                    aggregateTargetBindProperty = new AggregateTargetBindProperty(value, nextPathName, true, DataAggregatePropertyBind.BindType.DEFAULT, 1, level);
+                    aggregateTargetBindProperty = new AggregateTargetBindProperty(value, nextPathName, true, DataAggregatePropertyBind.BindType.AUTO, 1, level);
                 }
 
                 //约定 聚合对象下相同执行器可出现多次(需要指定别名)

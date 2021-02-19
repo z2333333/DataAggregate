@@ -11,7 +11,7 @@ import java.lang.annotation.*;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface DataAggregateType {
-    /* 二选一 */
+    /* 三选一 */
 
     /***
      * 执行器类
@@ -32,4 +32,11 @@ public @interface DataAggregateType {
     String[] classNames() default {};
 
     //todo 提供别名以支持同个聚合对象下相同执行器多次出现
+
+    /**
+     * 执行器详细配置
+     * 提供更加丰富的执行器行为设置
+     * @return
+     */
+    TypeProfile[] profile() default {};
 }

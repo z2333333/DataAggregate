@@ -3,6 +3,7 @@ package com.vd.canary.aggregate.manytoone.t1;
 import com.vd.canary.obmp.aggregate.annotation.DataAggregatePropertyBind;
 import com.vd.canary.obmp.aggregate.annotation.DataAggregatePropertyMapping;
 import com.vd.canary.obmp.aggregate.annotation.DataAggregateType;
+import com.vd.canary.obmp.aggregate.annotation.TypeProfile;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -19,8 +20,11 @@ import java.math.BigDecimal;
  * Created with Canary Automatic Code Generator  </p>
  */
 @Data
-@DataAggregateType({
-        OrderLineSkuInfoActuator.class
+//@DataAggregateType({
+//        LineSkuInfoActuator.class
+//})
+@DataAggregateType(profile = {
+       @TypeProfile(value = LineSkuInfoActuator.class,mode = TypeProfile.Mode.MANY_TO_ONE)
 })
 public class PurchaseLineVO implements Serializable {
 
@@ -28,7 +32,7 @@ public class PurchaseLineVO implements Serializable {
      * 采购订单行ID
      */
     @DataAggregatePropertyBind(value = "skuReq.skuIdList",type = DataAggregatePropertyBind.BindType.MANY_TO_ONE)
-    @DataAggregatePropertyMapping(className = OrderLineSkuInfoActuator.class, value = "orderSkuInfos.skuInfoVOS.skuId")
+    @DataAggregatePropertyMapping(className = LineSkuInfoActuator.class, value = "orderSkuInfos.skuInfoVOS.skuId")
     private String purchaseContractLineId;
 
     /**

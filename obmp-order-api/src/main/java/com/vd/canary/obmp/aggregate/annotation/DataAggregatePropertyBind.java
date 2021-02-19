@@ -31,14 +31,14 @@ public @interface DataAggregatePropertyBind {
      * 每个聚合对象的执行器几对几对应关系互相独立且有且只有一种状态
      * @return
      */
-    BindType type() default BindType.DEFAULT;
+    BindType type() default BindType.AUTO;
 
     enum BindType {
         /* 聚合对象:执行器 = N:1 */
         MANY_TO_ONE("MANY_TO_ONE"),
         MANY_TO_MANY("MANY_TO_MANY"),
         ONE_TO_ONE("ONE_TO_ONE"),
-        DEFAULT("DEFAULT");
+        AUTO("AUTO");
 
         public final String value;
 
