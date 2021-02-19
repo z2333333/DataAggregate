@@ -11,7 +11,7 @@ import java.lang.annotation.*;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface DataAggregateType {
-    /* 三选一 */
+    /* 三选一 优先级:profile>value>classNames */
 
     /***
      * 执行器类
@@ -36,6 +36,7 @@ public @interface DataAggregateType {
     /**
      * 执行器详细配置
      * 提供更加丰富的执行器行为设置
+     *
      * @return
      */
     TypeProfile[] profile() default {};

@@ -20,34 +20,9 @@ public @interface DataAggregatePropertyBind {
 
     /**
      * 标示绑定到执行器的属性是否必须
+     * 为了保持执行器的隔离与灵活性,放到聚合对象属性上而不是执行器上
      * true-聚合对象中绑定属性为null时将忽略对应执行器
      * false-聚合对象绑定属性为null时依然调用执行器
      */
     boolean required() default true;
-
-    /**
-     * 绑定类型
-     * 默认根据自动判断,仅在聚合对象与执行器属性多对一时需显示指定
-     * 每个聚合对象的执行器几对几对应关系互相独立且有且只有一种状态
-     * @return
-     */
-    BindType type() default BindType.AUTO;
-
-    enum BindType {
-        /* 聚合对象:执行器 = N:1 */
-        MANY_TO_ONE("MANY_TO_ONE"),
-        MANY_TO_MANY("MANY_TO_MANY"),
-        ONE_TO_ONE("ONE_TO_ONE"),
-        AUTO("AUTO");
-
-        public final String value;
-
-        BindType(final String value) {
-            this.value = value;
-        }
-
-        public String getValue() {
-            return this.value;
-        }
-    }
 }

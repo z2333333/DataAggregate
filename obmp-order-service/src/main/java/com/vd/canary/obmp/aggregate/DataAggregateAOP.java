@@ -7,6 +7,7 @@ import com.vd.canary.core.exception.BusinessException;
 import com.vd.canary.obmp.aggregate.annotation.DataAggregatePropertyBind;
 import com.vd.canary.obmp.aggregate.annotation.DataAggregatePropertyMapping;
 import com.vd.canary.obmp.aggregate.annotation.DataAggregateType;
+import com.vd.canary.obmp.aggregate.annotation.TypeProfile;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.beanutils.NestedNullException;
@@ -41,7 +42,8 @@ public class DataAggregateAOP {
 
     private ConcurrentHashMap<String, AggregateTargetNode> AggregateTargetMap = new ConcurrentHashMap();
     //todo 线程安全,享元
-    private ConcurrentHashMap<Class<?>, AggregateSourceNode> AggregateSourceMap = new ConcurrentHashMap<>();
+    //存执行器蓝本,get方法返回其clone
+    private ConcurrentHashMap<String, AggregateSourceNode> AggregateSourceMap = new ConcurrentHashMap<>();
 
     @Pointcut("bean(*Controller) && @annotation(com.vd.canary.obmp.aggregate.annotation.DataAggregate)")
     public void resultAop() {
@@ -366,37 +368,51 @@ public class DataAggregateAOP {
         targetPropertyName = targetPropertyName.charAt(0) == '.' ? targetPropertyName.substring(1) : targetPropertyName;
 
         if (clazz.isAnnotationPresent(DataAggregateType.class)) {
-
-            Class[] sourceClass = clazz.getAnnotation(DataAggregateType.class).value();
-            if (sourceClass.length == 0) {
-                //根据全限定类名加载class
-                String[] classNames = clazz.getAnnotation(DataAggregateType.class).classNames();
-                if (classNames.length > 0) {
-                    List<Class> sourceClassList = new ArrayList();
-                    try {
-                        for (int i = 0; i < classNames.length; i++) {
-                            sourceClassList.add(Class.forName(classNames[i]));
-                        }
-                    } catch (ClassNotFoundException classNotFoundException) {
-                        log.error("无法为聚合对象加载指定执行器-ClassNotFoundException,聚合对象={},执行器className={}", clazz.getName(), classNames[i]);
-                        throw new RuntimeException("无法为聚合对象加载指定执行器");
+            Class[] sourceClass;
+            String[] classNames;
+            List<AggregateSourceNode> aggregateSourceNodes = new ArrayList<>();
+            TypeProfile[] profiles = clazz.getAnnotation(DataAggregateType.class).profile();
+            if (profiles.length > 0) {
+                AggregateSourceNode aggregateSourceNode;
+                for (TypeProfile profile : profiles) {
+                    String className;
+                    Class value = profile.value();
+                    if (value != Object.class) {
+                        aggregateSourceNode = getOrCreateSourceNode(value, value.getName(), targetNode, levelMap);
+                    } else if (!(className = profile.className()).equals("")) {
+                        aggregateSourceNode = getOrCreateSourceNode(null, className, targetNode, levelMap);
+                    } else {
+                        log.error("数据聚合-解析TypeProfile异常-无效的执行器,聚合对象={},执行器className={}", targetNode.sourceClass.getName(), targetPropertyName);
+                        throw new BusinessException(120_000, "数据聚合-解析TypeProfile异常-无效的执行器");
                     }
-                    sourceClass = sourceClassList.toArray(new Class[sourceClassList.size()]);
+
+                    if (profile.mode().equals(TypeProfile.Mode.MANY_TO_ONE)) {
+                        //设置执行器对应关系为多对一
+                        //支持执行器对应关系随聚合对象变化
+                        aggregateSourceNode.setSingleton(true);
+                    }
+
+                    aggregateSourceNodes.add(aggregateSourceNode);
                 }
+            } else if ((sourceClass = clazz.getAnnotation(DataAggregateType.class).value()).length > 0) {
+                for (Class aClass : sourceClass) {
+                    aggregateSourceNodes.add(getOrCreateSourceNode(aClass, aClass.getName(), targetNode, levelMap));
+                }
+            } else if ((classNames = clazz.getAnnotation(DataAggregateType.class).classNames()).length > 0) {
+                for (String className : classNames) {
+                    aggregateSourceNodes.add(getOrCreateSourceNode(null, className, targetNode, levelMap));
+                }
+            } else {
+                log.error("数据聚合-解析DataAggregateType异常-无效的执行器,聚合对象={},执行器className={}", targetNode.sourceClass.getName(), targetPropertyName);
+                throw new BusinessException(120_000, "数据聚合-解析DataAggregateType异常-无效的执行器");
             }
 
-            for (Class source : sourceClass) {
-                if (!AggregateSourceMap.containsKey(source.getName())) {
-                    AggregateSourceNode sourceNodeNow = new AggregateSourceNode(source);
-                    parsingClass(new StringBuffer(), source, targetNode, sourceNodeNow, "actuator", levelMap);
-                    AggregateSourceMap.put(source, sourceNodeNow);
-                }
-
+            for (AggregateSourceNode aggregateSourceNode : aggregateSourceNodes) {
                 //设置解析对象待执行器
                 if (!targetNode.propertyAggregateMap.containsKey(targetPropertyName)) {
-                    targetNode.propertyAggregateMap.put(targetPropertyName, new ArrayList<>(Arrays.asList(AggregateSourceMap.get(source).clone())));
+                    targetNode.propertyAggregateMap.put(targetPropertyName, Arrays.asList(aggregateSourceNode));
                 } else {
-                    targetNode.propertyAggregateMap.get(targetPropertyName).add(AggregateSourceMap.get(source).clone());
+                    targetNode.propertyAggregateMap.get(targetPropertyName).add(aggregateSourceNode);
                 }
             }
         }
@@ -463,29 +479,21 @@ public class DataAggregateAOP {
                         bindSourcePropertyName = bindName;
                     }
 
-                    if (propertyBind.type().equals(DataAggregatePropertyBind.BindType.MANY_TO_ONE)) {
-                        //只要有一个属性指定就可以
-                        AtomicInteger bindTime = new AtomicInteger(0);
-                        for (AggregateSourceNode aggregateSourceNode : targetNode.propertyAggregateMap.get(targetPropertyName)) {
-                            if (!aggregateSourceNode.isSingleton()) {
-                                for (Map.Entry<String, PropertyDescriptor> aggregateSourceNodeEntry : aggregateSourceNode.propertyAggregateMap.entrySet()) {
-                                    if (aggregateSourceNodeEntry.getKey().equals(bindName)) {
-                                        bindTime.getAndIncrement();
-                                        aggregateSourceNode.setSingleton(true);
-                                        if (bindTime.get() > 1) {
-                                            log.error("数据聚合-聚合对象绑定执行器属性时执行器属性重复,聚合对象={},属性={}", targetNode.sourceClass.getName(), bindName);
-                                            throw new BusinessException(120_000, "数据聚合-解析聚合对象绑定注解异常,执行器属性重复");
-                                        }
-                                    }
+                    //校验属性绑定是否重复
+                    AtomicInteger bindTime = new AtomicInteger(0);
+                    for (AggregateSourceNode aggregateSourceNode : targetNode.propertyAggregateMap.get(targetPropertyName)) {
+                        for (Map.Entry<String, PropertyDescriptor> aggregateSourceNodeEntry : aggregateSourceNode.propertyAggregateMap.entrySet()) {
+                            if (aggregateSourceNodeEntry.getKey().equals(bindName)) {
+                                bindTime.getAndIncrement();
+                                if (bindTime.get() > 1) {
+                                    log.error("数据聚合-聚合对象绑定执行器属性时执行器属性重复,聚合对象={},属性={}", targetNode.sourceClass.getName(), bindName);
+                                    throw new BusinessException(120_000, "数据聚合-解析聚合对象绑定注解异常,执行器属性重复");
                                 }
                             }
                         }
-                        //设置执行器对应关系为多对一
-                        //支持执行器对应关系随聚合对象变化
-                        sourceNode.setSingleton(true);
                     }
 
-                    aggregateTargetBindProperty = new AggregateTargetBindProperty(bindSourcePropertyName, nextPathName, propertyBind.required(), propertyBind.type(), 0, level);
+                    aggregateTargetBindProperty = new AggregateTargetBindProperty(bindSourcePropertyName, nextPathName, propertyBind.required(), 0, level);
                 }
                 if (field.isAnnotationPresent(DataAggregatePropertyMapping.class)) {
                     DataAggregatePropertyMapping propertyMapping = field.getAnnotation(DataAggregatePropertyMapping.class);
@@ -508,7 +516,7 @@ public class DataAggregateAOP {
                     }
                     //todo 1.字段-在聚合对象中查找当前层级的同名字段 2.属性-查找当前层级同名属性 3.剩余字段如何处理?
                     bindSourcePropertyName = value;
-                    aggregateTargetBindProperty = new AggregateTargetBindProperty(value, nextPathName, true, DataAggregatePropertyBind.BindType.AUTO, 1, level);
+                    aggregateTargetBindProperty = new AggregateTargetBindProperty(value, nextPathName, true, 1, level);
                 }
 
                 //约定 聚合对象下相同执行器可出现多次(需要指定别名)
@@ -570,7 +578,7 @@ public class DataAggregateAOP {
             for (int i = 0; i < buildStatementList.size(); i++) {
                 String buildStatement = buildStatementList.get(i);
                 if (instances.size() < buildStatementList.size()) {
-                    instances.add(getOrderDataAggregateInstance(aggregateSourceNode));
+                    instances.add(getDataAggregateInstance(aggregateSourceNode));
                 }
 
                 //展开节点注入各级依赖值
@@ -592,7 +600,7 @@ public class DataAggregateAOP {
                     if (index == -1) {
                         //处理根节点
                         methodObjectMap = aggregatePrepare.nodeMap.get("~").nodeBindValMap.get("~");
-                    }else {
+                    } else {
                         str = j == 0 ? sj : str + "." + sj;
                         String nodeName = sj.substring(0, index);
                         Node node = aggregatePrepare.nodeMap.get(nodeName);
@@ -757,7 +765,7 @@ public class DataAggregateAOP {
         }
     }
 
-    private AbstractDataAggregate getOrderDataAggregateInstance(AggregateSourceNode sourceNode) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
+    private AbstractDataAggregate getDataAggregateInstance(AggregateSourceNode sourceNode) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
         AbstractDataAggregate orderDataAggregate = (AbstractDataAggregate) sourceNode.sourceClass.getDeclaredConstructor().newInstance();
         Map<Method, Object> initMap = new HashMap<>();
         for (Map.Entry<String, Object> classEntry : sourceNode.resourcePropertyMap.entrySet()) {
@@ -766,24 +774,6 @@ public class DataAggregateAOP {
         orderDataAggregate.init(initMap);
         return orderDataAggregate;
     }
-
-//    private AggregateSourceNode getTarSourceNode(Class clazz, String className) {
-//        //todo classname可能为全限定
-//        if (clazz != null) {
-//            return AggregateSourceMap.get(clazz);
-//        }
-//
-//        if (className != null) {
-//            for (Map.Entry<Class<?>, AggregateSourceNode> nodeEntry : AggregateSourceMap.entrySet()) {
-//                if (nodeEntry.getKey().getSimpleName().equals(className)) {
-//                    return nodeEntry.getValue();
-//                }
-//            }
-//        }
-//
-//        log.error("数据聚合-执行器获取异常,class={},className={}", clazz.getName(), className);
-//        throw new BusinessException(120_000, "数据聚合-执行器获取异常");
-//    }
 
     /***
      * 截取下一级路径
@@ -851,6 +841,25 @@ public class DataAggregateAOP {
             }
         }
         return false;
+    }
+
+    private AggregateSourceNode getOrCreateSourceNode(Class source, String className, AggregateTargetNode targetNode, Map<Integer, Integer> levelMap) throws ClassNotFoundException {
+        if (!AggregateSourceMap.containsKey(className)) {
+            if (source == null) {
+                //尝试加载执行器
+                try {
+                    source = Class.forName(className);
+                } catch (ClassNotFoundException classNotFoundException) {
+                    log.error("无法为聚合对象加载指定执行器-ClassNotFoundException,聚合对象={},执行器className={}", targetNode.sourceClass.getName(), className);
+                    throw new RuntimeException("无法为聚合对象加载指定执行器");
+                }
+            }
+            AggregateSourceNode sourceNodeNow = new AggregateSourceNode(source);
+            parsingClass(new StringBuffer(), source, targetNode, sourceNodeNow, "actuator", levelMap);
+            AggregateSourceMap.put(className, sourceNodeNow);
+        }
+
+        return AggregateSourceMap.get(className).clone();
     }
 
     /**
@@ -1053,7 +1062,6 @@ public class DataAggregateAOP {
          */
         private final int nodeType;
 
-        private final DataAggregatePropertyBind.BindType bindType;
         //执行器相对属性名
         private final String actuatorPropertyName;
         //聚合对象相对属性名
@@ -1063,11 +1071,10 @@ public class DataAggregateAOP {
         //list类型嵌套属性的层级(非List下的普通属性为0)
         private int level;
 
-        public AggregateTargetBindProperty(String v1, String v2, boolean v3, DataAggregatePropertyBind.BindType v4, int v5, int level) {
+        public AggregateTargetBindProperty(String v1, String v2, boolean v3, int v5, int level) {
             this.actuatorPropertyName = v1;
             this.aggregateTargetPropertyName = v2;
             this.required = v3;
-            this.bindType = v4;
             this.nodeType = v5;
             this.level = level;
         }
@@ -1082,10 +1089,6 @@ public class DataAggregateAOP {
 
         public boolean isRequired() {
             return required;
-        }
-
-        public DataAggregatePropertyBind.BindType getBindType() {
-            return bindType;
         }
     }
 

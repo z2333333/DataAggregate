@@ -15,7 +15,7 @@ public @interface TypeProfile {
      * 执行器类
      *
      * @param
-     * @return java.lang.Class[]
+     * @return java.lang.Class
      */
     Class value() default Object.class;
 
@@ -25,9 +25,9 @@ public @interface TypeProfile {
      * 当前架构下api层不会依赖service,在前者中无法引用后者的class
      *
      * @param
-     * @return java.lang.String[]
+     * @return java.lang.String
      */
-    String classNames() default "";
+    String className() default "";
 
     /**
      * 指定当前执行器模式
@@ -37,7 +37,7 @@ public @interface TypeProfile {
      */
     Mode mode() default Mode.AUTO;
 
-    //todo 提供别名以支持同个聚合对象下相同执行器多次出现
+    //todo 支持同个聚合对象下相同执行器多次出现
 
     enum Mode {
         /* 聚合对象:执行器 = N:1 */
