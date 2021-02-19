@@ -31,7 +31,7 @@ public class PurchaseLineVO implements Serializable {
     /**
      * 采购订单行ID
      */
-    @DataAggregatePropertyBind(value = "skuReq.skuIdList")
+    @DataAggregatePropertyBind(value = "skuReq.skuIdList",className = LineSkuInfoActuator.class)
     @DataAggregatePropertyMapping(className = LineSkuInfoActuator.class, value = "orderSkuInfos.skuInfoVOS.skuId")
     private String purchaseContractLineId;
 

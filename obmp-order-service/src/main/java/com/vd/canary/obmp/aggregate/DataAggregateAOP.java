@@ -23,7 +23,6 @@ import java.beans.PropertyDescriptor;
 import java.lang.reflect.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -120,7 +119,7 @@ public class DataAggregateAOP {
             String curTargetPropertyName = propertyPrepareEntity.getKey();
 
             for (AggregatePrepare aggregatePrepare : propertyPrepareEntity.getValue()) {
-                //为执行器描述节点建立当前resp的层级数据
+                //为执行器描述节点建立此次请求的层级数据
                 List<AbstractDataAggregate> instances = buildDataAggregate(responseData, aggregatePrepare);
 
                 AggregateSourceNode sourceNode = aggregatePrepare.aggregateSourceNode;
@@ -457,43 +456,23 @@ public class DataAggregateAOP {
                 //解析聚合对象属性绑定注解
                 targetNode.propertyList.add(nextPathName);
 
-                String bindSourcePropertyName = "";
-                String bindSourceClassName = "DEFAULT_CLASS_NAME";
-                AggregateTargetBindProperty aggregateTargetBindProperty = null;
+                List<AggregateTargetBindProperty> aggregateTargetBindProperties = new ArrayList<>();
                 if (field.isAnnotationPresent(DataAggregatePropertyBind.class)) {
                     DataAggregatePropertyBind propertyBind = field.getAnnotation(DataAggregatePropertyBind.class);
                     String bindName = propertyBind.value();
                     if (bindName == null || "".equals(bindName)) {
 
                     }
-                    //todo 绑定执行器的相对属性名如重复可以为类名.属性名,如果存在同名class如何处理(全限定类名不好截断)
-                    int index = bindName.indexOf(".");
-                    if (index > 0) {
-                        //类名.属性名的情况
-                        bindSourceClassName = bindName.substring(0, index - 1);
-                        bindSourcePropertyName = bindName.substring(index + 1);
-                    } else if (index == 0) {
-                        bindSourcePropertyName = bindName.substring(1);
-                    } else {
-                        //仅有属性名的情况
-                        bindSourcePropertyName = bindName;
+                    Class bindClass;
+                    String bindClassStr;
+                    String bindSourceClassName = null;
+                    if ((bindClass = propertyBind.className()) != Object.class) {
+                        bindSourceClassName = bindClass.getName();
+                    } else if (!(bindClassStr = propertyBind.classNameStr()).equals("")) {
+                        bindSourceClassName = bindClassStr;
                     }
 
-                    //校验属性绑定是否重复
-                    AtomicInteger bindTime = new AtomicInteger(0);
-                    for (AggregateSourceNode aggregateSourceNode : targetNode.propertyAggregateMap.get(targetPropertyName)) {
-                        for (Map.Entry<String, PropertyDescriptor> aggregateSourceNodeEntry : aggregateSourceNode.propertyAggregateMap.entrySet()) {
-                            if (aggregateSourceNodeEntry.getKey().equals(bindName)) {
-                                bindTime.getAndIncrement();
-                                if (bindTime.get() > 1) {
-                                    log.error("数据聚合-聚合对象绑定执行器属性时执行器属性重复,聚合对象={},属性={}", targetNode.sourceClass.getName(), bindName);
-                                    throw new BusinessException(120_000, "数据聚合-解析聚合对象绑定注解异常,执行器属性重复");
-                                }
-                            }
-                        }
-                    }
-
-                    aggregateTargetBindProperty = new AggregateTargetBindProperty(bindSourcePropertyName, nextPathName, propertyBind.required(), 0, level);
+                    aggregateTargetBindProperties.add(new AggregateTargetBindProperty(bindName, nextPathName, propertyBind.required(), 0, bindSourceClassName, level));
                 }
                 if (field.isAnnotationPresent(DataAggregatePropertyMapping.class)) {
                     DataAggregatePropertyMapping propertyMapping = field.getAnnotation(DataAggregatePropertyMapping.class);
@@ -501,6 +480,7 @@ public class DataAggregateAOP {
                     String classNameStr = propertyMapping.classNameStr();
                     Class<?> mappingClass = propertyMapping.className();
 
+                    String bindSourceClassName = null;
                     String[] cutOutPath = cutOutPath(value);
                     if (!mappingClass.equals(Object.class)) {
                         bindSourceClassName = mappingClass.getName();
@@ -515,12 +495,16 @@ public class DataAggregateAOP {
 
                     }
                     //todo 1.字段-在聚合对象中查找当前层级的同名字段 2.属性-查找当前层级同名属性 3.剩余字段如何处理?
-                    bindSourcePropertyName = value;
-                    aggregateTargetBindProperty = new AggregateTargetBindProperty(value, nextPathName, true, 1, level);
+                    aggregateTargetBindProperties.add(new AggregateTargetBindProperty(value, nextPathName, true, 1, bindSourceClassName, level));
                 }
 
                 //约定 聚合对象下相同执行器可出现多次(需要指定别名)
-                if (!bindSourcePropertyName.equals("") && aggregateTargetBindProperty != null) {
+                for (AggregateTargetBindProperty aggregateTargetBindProperty : aggregateTargetBindProperties) {
+                    String bindSourcePropertyName = aggregateTargetBindProperty.actuatorPropertyName;
+                    if (bindSourcePropertyName.equals("")) {
+                        continue;
+                    }
+                    String bindSourceClassName = aggregateTargetBindProperty.actuatorClassName;
                     if (targetNode.bindPropertyMap.containsKey(bindSourceClassName)) {
                         Map<String, List<AggregateTargetBindProperty>> listMap = targetNode.bindPropertyMap.get(bindSourceClassName);
                         if (targetNode.getTarBindProperty(listMap, bindSourcePropertyName, 0) != null) {
@@ -908,8 +892,9 @@ public class DataAggregateAOP {
                 String curTargetPropertyName = targetPropertyEntry.getKey();
                 //遍历属性绑定的所有执行器
                 for (AggregateSourceNode sourceNode : targetPropertyEntry.getValue()) {
-                    Map<String, List<AggregateTargetBindProperty>> classMap = bindPropertyMap.get(sourceNode.sourceClass.getName());
-                    Map<String, List<AggregateTargetBindProperty>> defaultClassMap = bindPropertyMap.get("DEFAULT_CLASS_NAME");
+                    Map<String, List<AggregateTargetBindProperty>> classMap, defaultClassMap;
+                    classMap = bindPropertyMap.get(sourceNode.sourceClass.getName());
+                    defaultClassMap = bindPropertyMap.get("DEFAULT_CLASS_NAME");
 
                     AggregatePrepare aggregatePrepare = null;
                     if (!aggregatePrepareMap.containsKey(curTargetPropertyName)) {
@@ -1061,7 +1046,7 @@ public class DataAggregateAOP {
          * 1-映射
          */
         private final int nodeType;
-
+        private String actuatorClassName = "DEFAULT_CLASS_NAME";
         //执行器相对属性名
         private final String actuatorPropertyName;
         //聚合对象相对属性名
@@ -1071,11 +1056,12 @@ public class DataAggregateAOP {
         //list类型嵌套属性的层级(非List下的普通属性为0)
         private int level;
 
-        public AggregateTargetBindProperty(String v1, String v2, boolean v3, int v5, int level) {
+        public AggregateTargetBindProperty(String v1, String v2, boolean v3, int v5, String v6, int level) {
             this.actuatorPropertyName = v1;
             this.aggregateTargetPropertyName = v2;
             this.required = v3;
             this.nodeType = v5;
+            actuatorClassName = v6 == null ? actuatorClassName : v6;
             this.level = level;
         }
 

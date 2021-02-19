@@ -16,7 +16,21 @@ import java.lang.annotation.Target;
 @Target(ElementType.FIELD)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface DataAggregatePropertyBind {
+
+    /**
+     * 标记绑定执行器的属性
+     * @return
+     */
     String value();
+
+    /**
+     * 当执行器属性重复时需指定类
+     * @return
+     */
+    //todo 注解的继承/组合
+    Class<?> className() default Object.class;
+
+    String classNameStr() default "";
 
     /**
      * 标示绑定到执行器的属性是否必须
