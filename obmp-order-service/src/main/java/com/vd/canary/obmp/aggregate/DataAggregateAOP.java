@@ -449,8 +449,8 @@ public class DataAggregateAOP {
                         sourceNode.allowPropertyList.add(nextPathName);
                     }
                 }
-                PropertyDescriptor propertyDescriptor = findTar(clazz, field.getName());
-                sourceNode.propertyAggregateMap.put(nextPathName, new AggregateBaseNode(propertyDescriptor.getWriteMethod(),propertyDescriptor.getReadMethod(),field));
+                PropertyDescriptor propertyDescriptor = findTar(clazz, field.getName());//todo 不需要每次重新获取类,设置缓存
+                sourceNode.propertyAggregateMap.put(nextPathName, new AggregateBaseNode(propertyDescriptor.getWriteMethod(), propertyDescriptor.getReadMethod(), field));
             } else {
                 //解析聚合对象属性绑定注解
                 targetNode.propertyList.add(nextPathName);
@@ -527,7 +527,7 @@ public class DataAggregateAOP {
                 //todo List多重泛型嵌套测试
                 ParameterizedType pType = (ParameterizedType) field.getGenericType();
                 if (pType.getActualTypeArguments().length > 0) {
-                    propertyTypeClass = Class.forName(pType.getActualTypeArguments()[0].getTypeName());
+                    propertyTypeClass = (Class<?>) pType.getActualTypeArguments()[0];
                 }
             }
             if (isParsingClass(propertyTypeClass)) {
@@ -548,11 +548,11 @@ public class DataAggregateAOP {
         if (firstNode == null) {
             return instances;
         }
-        Map<Method,List> listTypeMap;
+        Map<Method, List> containerTypeMap;
         AbstractDataAggregate instance = null;
         AggregateSourceNode aggregateSourceNode = aggregatePrepare.aggregateSourceNode;
         if (aggregateSourceNode.isSingleton()) {
-            listTypeMap = new HashMap<>();
+            containerTypeMap = new HashMap<>();
             instances.add(instance = getDataAggregateInstance(aggregateSourceNode));
         }
         Node lastNode = aggregatePrepare.getLastNode();
@@ -598,11 +598,14 @@ public class DataAggregateAOP {
                     continue;
                 }
                 for (Map.Entry<AggregateBaseNode, Object> methodObjectEntry : methodObjectMap.entrySet()) {
+                    AggregateBaseNode baseNode = methodObjectEntry.getKey();
                     if (!aggregateSourceNode.isSingleton()) {
-                        methodObjectEntry.getKey().writeMethod.invoke(instance, methodObjectEntry.getValue());
+                        baseNode.writeMethod.invoke(instance, methodObjectEntry.getValue());
                     } else {
                         //如果实际访问路径是List那么对应的执行器注入值也应为list
+                        if (baseNode.isContainer()) {
 
+                        }
                     }
                 }
             }
@@ -1018,7 +1021,6 @@ public class DataAggregateAOP {
         //key  自身相对属性名 val 读写方法
         //todo 支持绑定对象重载?
         //执行器属性名,读写对象map
-        //todo 需要知道每个属性的类型(是否为list)
         final Map<String, AggregateBaseNode> propertyAggregateMap = new HashMap<>();
         //key 自身相对属性名 val spring托管Bean
         //执行器中需要注入spring托管对象Map
@@ -1151,6 +1153,7 @@ public class DataAggregateAOP {
 
         //标示属性是否为容器
         private boolean container;
+        private Class<?> containerClass;
 
         public AggregateBaseNode(Method writeMethod, Method readMethod, Field field) {
             this.field = field;
@@ -1165,15 +1168,19 @@ public class DataAggregateAOP {
                 this.container = true;
                 //todo List多重泛型嵌套测试
                 ParameterizedType pType = (ParameterizedType) field.getGenericType();
-//                if (pType.getActualTypeArguments().length > 0) {
-//                    propertyTypeClass = Class.forName(pType.getActualTypeArguments()[0].getTypeName());
-//                }
+                if (pType.getActualTypeArguments().length > 0) {
+                    containerClass = (Class<?>) pType.getActualTypeArguments()[0];
+                }
             }
             return this;
         }
 
         public boolean isRequired() {
             return required;
+        }
+
+        public boolean isContainer() {
+            return container;
         }
 
         @Override
