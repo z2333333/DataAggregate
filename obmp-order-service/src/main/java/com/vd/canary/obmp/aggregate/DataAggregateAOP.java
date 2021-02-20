@@ -23,8 +23,6 @@ import java.beans.PropertyDescriptor;
 import java.lang.reflect.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -544,63 +542,68 @@ public class DataAggregateAOP {
     }
 
     private List<AbstractDataAggregate> buildDataAggregate(Object sourceData, AggregatePrepare aggregatePrepare) throws InvocationTargetException, IllegalAccessException, NoSuchMethodException, InstantiationException {
-        Node firstNode = aggregatePrepare.getDescNode();
         List<AbstractDataAggregate> instances = new ArrayList<>();
+        Node firstNode = aggregatePrepare.getDescNode();
         if (firstNode == null) {
             return instances;
         }
+        AbstractDataAggregate instance = null;
         AggregateSourceNode aggregateSourceNode = aggregatePrepare.aggregateSourceNode;
-
+        if (aggregateSourceNode.isSingleton()) {
+            instance = getDataAggregateInstance(aggregateSourceNode);
+            instances.add(instance);
+        }
         Node lastNode = aggregatePrepare.getLastNode();
+
         //填充根节点绑定值
         createNodeLevelData(sourceData, firstNode, "~", sourceData instanceof List);
-        if (!aggregateSourceNode.isSingleton()) {
-            //根据层级节点计算
-            //从属性理论路径构建实际访问路径
-            List<String> buildStatementList = buildStatementList(sourceData, new ArrayList(), lastNode.commonPrepareNodes.get(0).targetPropertyPath, -1, -1, "", "read", new ArrayList<>(), lastNode);
-            for (int i = 0; i < buildStatementList.size(); i++) {
-                String buildStatement = buildStatementList.get(i);
-                if (instances.size() < buildStatementList.size()) {
-                    instances.add(getDataAggregateInstance(aggregateSourceNode));
+
+        //根据层级节点计算
+        //从属性理论路径构建实际访问路径
+        List<String> buildStatementList = buildStatementList(sourceData, new ArrayList(), lastNode.commonPrepareNodes.get(0).targetPropertyPath, -1, -1, "", "read", new ArrayList<>(), lastNode);
+        for (int i = 0; i < buildStatementList.size(); i++) {
+            String buildStatement = buildStatementList.get(i);
+
+            if (!aggregateSourceNode.isSingleton() && instances.size() < buildStatementList.size()) {
+                instances.add(getDataAggregateInstance(aggregateSourceNode));
+                instance = instances.get(i);
+            }
+
+            //Map<Method, Object>[] maps = filterTarStatementList(buildStatement, aggregatePrepare.nodeMap);
+            //展开节点注入各级依赖值
+            String str = "";
+            String[] statementSplit = buildStatement.split("\\.");
+            for (int j = 0; j < statementSplit.length; j++) {
+                String sj = statementSplit[j];
+                if (sj.charAt(0) == '[') {
+                    //处理[].xxx的情况
+                    str = sj;
+                    continue;
                 }
 
-                //展开节点注入各级依赖值
-                AbstractDataAggregate dataAggregate = instances.get(i);
-                //Map<Method, Object>[] maps = filterTarStatementList(buildStatement, aggregatePrepare.nodeMap);
-
-                String str = "";
-                String[] statementSplit = buildStatement.split("\\.");
-                for (int j = 0; j < statementSplit.length; j++) {
-                    String sj = statementSplit[j];
-                    if (sj.charAt(0) == '[') {
-                        //处理[].xxx的情况
-                        str = sj;
-                        continue;
-                    }
-
-                    Map<Method, Object> methodObjectMap;
-                    int index = sj.lastIndexOf("[");
-                    if (index == -1) {
-                        //处理根节点
-                        methodObjectMap = aggregatePrepare.nodeMap.get("~").nodeBindValMap.get("~");
+                Map<AggregateBaseNode, Object> methodObjectMap;
+                int index = sj.lastIndexOf("[");
+                if (index == -1) {
+                    //处理根节点
+                    methodObjectMap = aggregatePrepare.nodeMap.get("~").nodeBindValMap.get("~");
+                } else {
+                    str = j == 0 ? sj : str + "." + sj;
+                    String nodeName = sj.substring(0, index);
+                    Node node = aggregatePrepare.nodeMap.get(nodeName);
+                    methodObjectMap = node.nodeBindValMap.get(str);
+                }
+                if (methodObjectMap == null) {
+                    continue;
+                }
+                for (Map.Entry<AggregateBaseNode, Object> methodObjectEntry : methodObjectMap.entrySet()) {
+                    if (!aggregateSourceNode.isSingleton()) {
+                        methodObjectEntry.getKey().method.invoke(instance, methodObjectEntry.getValue());
                     } else {
-                        str = j == 0 ? sj : str + "." + sj;
-                        String nodeName = sj.substring(0, index);
-                        Node node = aggregatePrepare.nodeMap.get(nodeName);
-                        methodObjectMap = node.nodeBindValMap.get(str);
-                    }
-                    if (methodObjectMap == null) {
-                        continue;
-                    }
-                    for (Map.Entry<Method, Object> methodObjectEntry : methodObjectMap.entrySet()) {
-                        methodObjectEntry.getKey().invoke(dataAggregate, methodObjectEntry.getValue());
+                        //如果实际访问路径是List那么对应的执行器注入值也应为list
                     }
                 }
             }
-        } else {
-            //显式指定为单例
         }
-
         return instances;
     }
 
@@ -648,26 +651,26 @@ public class DataAggregateAOP {
      * @param actualTarStatement
      * @author zhengxin
      */
-    private Map<Method, Object>[] filterTarStatementList(String actualTarStatement, Map<String, Node> nodeMap) {
-        //todo 省略处理字符串,放到buildstatement中?
-        Pattern p = Pattern.compile("(\\[[^\\]]*\\])");
-        String[] statementSplit = actualTarStatement.split("\\.");
-        Map<Method, Object>[] maps = new HashMap[statementSplit.length];
-        for (int i = 0; i < statementSplit.length; i++) {
-            String str = statementSplit[i];
-            Matcher m = p.matcher(str);
-            if (m.find()) {
-                String indexStr = m.group().substring(1, m.group().length() - 1);
-                String nodeName = str.substring(0, str.lastIndexOf("["));
-                Node node = nodeMap.get(nodeName);
-                Map<Method, Object> methodObjectMap = node.nodeBindValMap.get(Integer.valueOf(indexStr));
-                maps[i] = methodObjectMap;
-            }
-        }
-
-        maps[maps.length - 1] = nodeMap.get("~").nodeBindValMap.get(0);
-        return maps;
-    }
+//    private Map<Method, Object>[] filterTarStatementList(String actualTarStatement, Map<String, Node> nodeMap) {
+//        //todo 省略处理字符串,放到buildstatement中?
+//        Pattern p = Pattern.compile("(\\[[^\\]]*\\])");
+//        String[] statementSplit = actualTarStatement.split("\\.");
+//        Map<Method, Object>[] maps = new HashMap[statementSplit.length];
+//        for (int i = 0; i < statementSplit.length; i++) {
+//            String str = statementSplit[i];
+//            Matcher m = p.matcher(str);
+//            if (m.find()) {
+//                String indexStr = m.group().substring(1, m.group().length() - 1);
+//                String nodeName = str.substring(0, str.lastIndexOf("["));
+//                Node node = nodeMap.get(nodeName);
+//                Map<Method, Object> methodObjectMap = node.nodeBindValMap.get(Integer.valueOf(indexStr));
+//                maps[i] = methodObjectMap;
+//            }
+//        }
+//
+//        maps[maps.length - 1] = nodeMap.get("~").nodeBindValMap.get(0);
+//        return maps;
+//    }
 
     /***
      * 过滤指定数组下标的访问路径
@@ -805,7 +808,7 @@ public class DataAggregateAOP {
                     String path = tarPaths[tarPaths.length - 1];
                     Object prepareVal = PropertyUtils.getProperty(sources.get(i), path);
                     String var = isList ? statement + "[" + i + "]" : statement;
-                    node.addBindVal(prepareNode.method, prepareVal, var);
+                    node.addBindVal(prepareNode, prepareVal, var);
                 } catch (IllegalAccessException e) {
                     e.printStackTrace();
                 } catch (InvocationTargetException e) {
@@ -941,7 +944,7 @@ public class DataAggregateAOP {
                                 if (aggregatePrepare.getDescNode() == null) {
                                     aggregatePrepare.descNode = new Node("~", level);
                                 }
-                                aggregatePrepare.addCommonPrepareNode(new AggregateBaseNode(writeMethod, aggregateTargetPropertyName, tarProperty.isRequired()));
+                                aggregatePrepare.addCommonPrepareNode(new AggregateBaseNode(writeMethod, aggregateTargetPropertyName, tarProperty.isRequired(),entry.getValue().getPropertyType()));
                             } else {
                                 //list类型嵌套属性
                                 Node firstNode = aggregatePrepare.getDescNode();
@@ -989,7 +992,8 @@ public class DataAggregateAOP {
                                         tarNode = newNode;
                                     }
                                 }
-                                tarNode.commonPrepareNodes.add(new AggregateBaseNode(writeMethod, aggregateTargetPropertyName, tarProperty.isRequired()));
+
+                                tarNode.commonPrepareNodes.add(new AggregateBaseNode(writeMethod, aggregateTargetPropertyName, tarProperty.isRequired(), entry.getValue().getPropertyType()));
                             }
                         }
                     }
@@ -1140,7 +1144,7 @@ public class DataAggregateAOP {
         //标示绑定到执行器的属性是否必要
         private final boolean required;
 
-        public AggregateBaseNode(Method method, String targetPropertyPath, boolean required) {
+        public AggregateBaseNode(Method method, String targetPropertyPath, boolean required, Class<?> propertyClass) {
             this.method = method;
             this.required = required;
             this.targetPropertyPath = targetPropertyPath;
@@ -1148,6 +1152,16 @@ public class DataAggregateAOP {
 
         public boolean isRequired() {
             return required;
+        }
+
+        @Override
+        public int hashCode() {
+            return method.hashCode();
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            return method.equals(((AggregateBaseNode) obj).method);
         }
     }
 
@@ -1158,7 +1172,7 @@ public class DataAggregateAOP {
         //普通属性绑定列表
         private List<AggregateBaseNode> commonPrepareNodes = new ArrayList<>();
         //key 实际属性访问路径 val 路径下的所有属性
-        private Map<String, Map<Method, Object>> nodeBindValMap = new HashMap<>();
+        private Map<String, Map<AggregateBaseNode, Object>> nodeBindValMap = new HashMap<>();
 
         private String id;
         private int level;
@@ -1171,7 +1185,7 @@ public class DataAggregateAOP {
             this.curLevelPropertyName = curLevelPropertyName;
         }
 
-        public boolean addBindVal(Method method, Object val, String statement) {
+        public boolean addBindVal(AggregateBaseNode prepareNode, Object val, String statement) {
             String key = null;
             if (statement.equals("~")) {
                 key = statement;
@@ -1188,13 +1202,12 @@ public class DataAggregateAOP {
                 }
             }
             if (!nodeBindValMap.containsKey(key)) {
-                Map<Method, Object> map = new HashMap<>();
-                map.put(method, val);
+                Map<AggregateBaseNode, Object> map = new HashMap<>();
+                map.put(prepareNode, val);
                 nodeBindValMap.put(key, map);
             } else {
-                nodeBindValMap.get(key).put(method, val);
+                nodeBindValMap.get(key).put(prepareNode, val);
             }
-            //prepareVal = PropertyUtils.getProperty(sources.get(i), tarPaths[tarPaths.length - 1]);
             return true;
         }
     }
