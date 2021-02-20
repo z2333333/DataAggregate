@@ -547,11 +547,13 @@ public class DataAggregateAOP {
         if (firstNode == null) {
             return instances;
         }
+        Map<Method,List> listTypeMap;
         AbstractDataAggregate instance = null;
         AggregateSourceNode aggregateSourceNode = aggregatePrepare.aggregateSourceNode;
         if (aggregateSourceNode.isSingleton()) {
             instance = getDataAggregateInstance(aggregateSourceNode);
             instances.add(instance);
+            listTypeMap = new HashMap<>();
         }
         Node lastNode = aggregatePrepare.getLastNode();
 
@@ -1144,10 +1146,19 @@ public class DataAggregateAOP {
         //标示绑定到执行器的属性是否必要
         private final boolean required;
 
+        //private final boolean container;
+
         public AggregateBaseNode(Method method, String targetPropertyPath, boolean required, Class<?> propertyClass) {
             this.method = method;
             this.required = required;
             this.targetPropertyPath = targetPropertyPath;
+            if (propertyClass.isAssignableFrom(List.class)) {
+                //todo List多重泛型嵌套测试
+//                ParameterizedType pType = (ParameterizedType) field.getGenericType();
+//                if (pType.getActualTypeArguments().length > 0) {
+//                    propertyTypeClass = Class.forName(pType.getActualTypeArguments()[0].getTypeName());
+//                }
+            }
         }
 
         public boolean isRequired() {
