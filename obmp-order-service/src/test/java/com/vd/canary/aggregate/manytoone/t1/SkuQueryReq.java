@@ -10,5 +10,5 @@ import java.util.List;
  */
 @Data
 public class SkuQueryReq {
-    private List<String> skuIdList;
+    private List<SkuInfoVO> skuIdList;
 }

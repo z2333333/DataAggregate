@@ -167,8 +167,8 @@ public class DataAggregateAOP {
 
                         if (targetStatementList.size() > 0) {
                             reWriteCacheMap.put(waitWriteVal, null);
-                            PropertyDescriptor propertyDescriptor = sourceNode.propertyAggregateMap.get(waitWriteVal);
-                            Object val = propertyDescriptor.getReadMethod().invoke(dataAggregate);
+                            AggregateBaseNode aggregateBaseNode = sourceNode.propertyAggregateMap.get(waitWriteVal);
+                            Object val = aggregateBaseNode.readMethod.invoke(dataAggregate);
 
                             //todo 当前适配1:1与n:n
                             //实际可访问路径与执行器的index有序且对应,直接执行
@@ -449,7 +449,8 @@ public class DataAggregateAOP {
                         sourceNode.allowPropertyList.add(nextPathName);
                     }
                 }
-                sourceNode.propertyAggregateMap.put(nextPathName, findTar(clazz, field.getName()));
+                PropertyDescriptor propertyDescriptor = findTar(clazz, field.getName());
+                sourceNode.propertyAggregateMap.put(nextPathName, new AggregateBaseNode(propertyDescriptor.getWriteMethod(),propertyDescriptor.getReadMethod(),field));
             } else {
                 //解析聚合对象属性绑定注解
                 targetNode.propertyList.add(nextPathName);
@@ -551,9 +552,8 @@ public class DataAggregateAOP {
         AbstractDataAggregate instance = null;
         AggregateSourceNode aggregateSourceNode = aggregatePrepare.aggregateSourceNode;
         if (aggregateSourceNode.isSingleton()) {
-            instance = getDataAggregateInstance(aggregateSourceNode);
-            instances.add(instance);
             listTypeMap = new HashMap<>();
+            instances.add(instance = getDataAggregateInstance(aggregateSourceNode));
         }
         Node lastNode = aggregatePrepare.getLastNode();
 
@@ -599,9 +599,10 @@ public class DataAggregateAOP {
                 }
                 for (Map.Entry<AggregateBaseNode, Object> methodObjectEntry : methodObjectMap.entrySet()) {
                     if (!aggregateSourceNode.isSingleton()) {
-                        methodObjectEntry.getKey().method.invoke(instance, methodObjectEntry.getValue());
+                        methodObjectEntry.getKey().writeMethod.invoke(instance, methodObjectEntry.getValue());
                     } else {
                         //如果实际访问路径是List那么对应的执行器注入值也应为list
+
                     }
                 }
             }
@@ -757,7 +758,7 @@ public class DataAggregateAOP {
         AbstractDataAggregate orderDataAggregate = (AbstractDataAggregate) sourceNode.sourceClass.getDeclaredConstructor().newInstance();
         Map<Method, Object> initMap = new HashMap<>();
         for (Map.Entry<String, Object> classEntry : sourceNode.resourcePropertyMap.entrySet()) {
-            initMap.put(sourceNode.propertyAggregateMap.get(classEntry.getKey()).getWriteMethod(), classEntry.getValue());
+            initMap.put(sourceNode.propertyAggregateMap.get(classEntry.getKey()).writeMethod, classEntry.getValue());
         }
         orderDataAggregate.init(initMap);
         return orderDataAggregate;
@@ -919,8 +920,9 @@ public class DataAggregateAOP {
                     }
 
                     //遍历执行器属性,如果属性在聚合对象中存在绑定关系,则建立描述节点
-                    for (Map.Entry<String, PropertyDescriptor> entry : sourceNode.propertyAggregateMap.entrySet()) {
+                    for (Map.Entry<String, AggregateBaseNode> entry : sourceNode.propertyAggregateMap.entrySet()) {
                         String sourcePropertyName = entry.getKey();
+                        AggregateBaseNode aggregateBaseNode = entry.getValue();
 
                         if (sourceNode.resourcePropertyMap.containsKey(sourcePropertyName) || sourceNode.allowPropertyList.contains(sourcePropertyName)) {
                             //该属性需要从spring中获取或为待反写的值
@@ -936,7 +938,7 @@ public class DataAggregateAOP {
                             continue;
                         }
 
-                        Method writeMethod = entry.getValue().getWriteMethod();
+                        Method writeMethod = aggregateBaseNode.writeMethod;
                         String aggregateTargetPropertyName = tarProperty.getAggregateTargetPropertyName();
                         if (tarProperty.nodeType == 0) {
                             //绑定类型
@@ -946,7 +948,7 @@ public class DataAggregateAOP {
                                 if (aggregatePrepare.getDescNode() == null) {
                                     aggregatePrepare.descNode = new Node("~", level);
                                 }
-                                aggregatePrepare.addCommonPrepareNode(new AggregateBaseNode(writeMethod, aggregateTargetPropertyName, tarProperty.isRequired(),entry.getValue().getPropertyType()));
+                                aggregatePrepare.addCommonPrepareNode(aggregateBaseNode.initAggregateBaseNode(aggregateTargetPropertyName, tarProperty.isRequired()));
                             } else {
                                 //list类型嵌套属性
                                 Node firstNode = aggregatePrepare.getDescNode();
@@ -995,7 +997,7 @@ public class DataAggregateAOP {
                                     }
                                 }
 
-                                tarNode.commonPrepareNodes.add(new AggregateBaseNode(writeMethod, aggregateTargetPropertyName, tarProperty.isRequired(), entry.getValue().getPropertyType()));
+                                tarNode.commonPrepareNodes.add(aggregateBaseNode.initAggregateBaseNode(aggregateTargetPropertyName, tarProperty.isRequired()));
                             }
                         }
                     }
@@ -1017,7 +1019,7 @@ public class DataAggregateAOP {
         //todo 支持绑定对象重载?
         //执行器属性名,读写对象map
         //todo 需要知道每个属性的类型(是否为list)
-        final Map<String, PropertyDescriptor> propertyAggregateMap = new HashMap<>();
+        final Map<String, AggregateBaseNode> propertyAggregateMap = new HashMap<>();
         //key 自身相对属性名 val spring托管Bean
         //执行器中需要注入spring托管对象Map
         final Map<String, Object> resourcePropertyMap = new HashMap<>();
@@ -1137,28 +1139,37 @@ public class DataAggregateAOP {
     }
 
     static class AggregateBaseNode {
+        private final Field field;
         //执行器属性读写方法
-        private final Method method;
-
-        //聚合对象属性路径
-        private final String targetPropertyPath;
+        private final Method readMethod;
+        private final Method writeMethod;
 
         //标示绑定到执行器的属性是否必要
-        private final boolean required;
+        private boolean required;
+        //聚合对象属性路径
+        private String targetPropertyPath;
 
-        //private final boolean container;
+        //标示属性是否为容器
+        private boolean container;
 
-        public AggregateBaseNode(Method method, String targetPropertyPath, boolean required, Class<?> propertyClass) {
-            this.method = method;
+        public AggregateBaseNode(Method writeMethod, Method readMethod, Field field) {
+            this.field = field;
+            this.readMethod = readMethod;
+            this.writeMethod = writeMethod;
+        }
+
+        public AggregateBaseNode initAggregateBaseNode(String targetPropertyPath, boolean required) {
             this.required = required;
             this.targetPropertyPath = targetPropertyPath;
-            if (propertyClass.isAssignableFrom(List.class)) {
+            if (field.getType().isAssignableFrom(List.class)) {
+                this.container = true;
                 //todo List多重泛型嵌套测试
-//                ParameterizedType pType = (ParameterizedType) field.getGenericType();
+                ParameterizedType pType = (ParameterizedType) field.getGenericType();
 //                if (pType.getActualTypeArguments().length > 0) {
 //                    propertyTypeClass = Class.forName(pType.getActualTypeArguments()[0].getTypeName());
 //                }
             }
+            return this;
         }
 
         public boolean isRequired() {
@@ -1167,12 +1178,12 @@ public class DataAggregateAOP {
 
         @Override
         public int hashCode() {
-            return method.hashCode();
+            return writeMethod.hashCode();
         }
 
         @Override
         public boolean equals(Object obj) {
-            return method.equals(((AggregateBaseNode) obj).method);
+            return writeMethod.equals(((AggregateBaseNode) obj).writeMethod);
         }
     }
 
