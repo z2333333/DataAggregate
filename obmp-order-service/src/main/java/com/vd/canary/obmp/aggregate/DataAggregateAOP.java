@@ -552,7 +552,6 @@ public class DataAggregateAOP {
         AggregateSourceNode aggregateSourceNode = aggregatePrepare.aggregateSourceNode;
 
         Node lastNode = aggregatePrepare.getLastNode();
-        Map<String, AbstractDataAggregate> preValMap = new HashMap<>();
         //填充根节点绑定值
         createNodeLevelData(sourceData, firstNode, "~", sourceData instanceof List);
         if (!aggregateSourceNode.isSingleton()) {
