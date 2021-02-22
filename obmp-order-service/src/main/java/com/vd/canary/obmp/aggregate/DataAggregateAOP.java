@@ -355,7 +355,7 @@ public class DataAggregateAOP {
      * @author zhengxin
      */
     //todo 按照执行器,聚合对象,以及分别对应的注解build模式重写?
-    private AggregateTargetNode parsingClass(StringBuffer absolutePathName, Class<?> clazz, AggregateTargetNode targetNode, AggregateSourceNode sourceNode, String type, Map<Integer, Integer> levelMap) throws ClassNotFoundException {
+    private AggregateTargetNode parsingClass(StringBuffer absolutePathName, Class<?> clazz, AggregateTargetNode targetNode, AggregateSourceNode sourceNode, String type, Map<Integer, Integer> levelMap) throws ClassNotFoundException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
         //todo 如果含有递归对象会有问题
         int hash = getHash(absolutePathName.toString(), clazz);
         if (!levelMap.containsKey(hash)) {
@@ -458,12 +458,7 @@ public class DataAggregateAOP {
                 PropertyDescriptor propertyDescriptor = findTar(clazz, field.getName());//todo 不需要每次重新获取类,设置缓存
                 AggregateBaseNode baseNode = new AggregateBaseNode(propertyDescriptor.getWriteMethod(), propertyDescriptor.getReadMethod(), field);
                 sourceNode.propertyAggregateMap.put(nextPathName, baseNode);
-                AggregateBaseNode previousBaseNode = sourceNode.propertyAggregateMap.get(tmpAbsolutePathName);
-                //将容器下属的泛型解析指向容器本身
-                if (previousBaseNode != null && previousBaseNode.isContainer()) {
-                    baseNode.setContainer(true);
-                    baseNode.belongContainer = previousBaseNode.belongContainer;
-                }
+                baseNode.initAggregateBaseNode(sourceNode.propertyAggregateMap.get(tmpAbsolutePathName));
             } else {
                 //解析聚合对象属性绑定注解
                 targetNode.propertyList.add(nextPathName);
@@ -617,18 +612,20 @@ public class DataAggregateAOP {
                     AggregateBaseNode baseNode = methodObjectEntry.getKey();
                     Object value = methodObjectEntry.getValue();
                     if (!aggregateSourceNode.isSingleton()) {
+                        //todo baseNode传入的是baseNode的上一级
                         baseNode.writeMethod.invoke(instance, value);
                     } else {
                         //如果实际访问路径是List那么对应的执行器注入值也应为list
-                        if (baseNode.isContainer()) {
-                            //todo 对于展开节点各级都要new一个容器对象? 结合实际情况
-                            if (baseNode.containerClass != null && baseNode.containerClass != value.getClass()) {
-                                //todo 在解析时抛出?
-                                throw new BusinessException(120_000, "数据聚合-聚合对象值的实际类型与进行绑定的执行器容器属性所指定的泛型不一致");
-                            }
-                            containerTypeInstance = j == 0 ? (belongContainer = baseNode.belongContainer).getContainerElement() : containerTypeInstance;
-                            baseNode.writeMethod.invoke(containerTypeInstance, value);
-                        }
+
+//                        if (baseNode.isContainer()) {
+//                            //todo 对于展开节点各级都要new一个容器对象? 结合实际情况
+//                            if (baseNode.containerClass != null && baseNode.containerClass != value.getClass()) {
+//                                //todo 在解析时抛出?
+//                                throw new BusinessException(120_000, "数据聚合-聚合对象值的实际类型与进行绑定的执行器容器属性所指定的泛型不一致");
+//                            }
+//                            containerTypeInstance = j == 0 ? (belongContainer = baseNode.belongContainer).getContainerElement() : containerTypeInstance;
+//                            baseNode.writeMethod.invoke(containerTypeInstance, value);
+//                        }
                     }
                 }
             }
@@ -638,7 +635,7 @@ public class DataAggregateAOP {
         }
         if (belongContainer != null) {
             //todo 何时执行清理 buildStatementList可能为多条不同属性
-            belongContainer.writeMethod.invoke(instance, belongContainer.containerInstance);
+            belongContainer.writeMethod.invoke(instance, belongContainer.propertyInstance);
         }
         return instances;
     }
@@ -788,13 +785,31 @@ public class DataAggregateAOP {
     }
 
     private AbstractDataAggregate getDataAggregateInstance(AggregateSourceNode sourceNode) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
-        AbstractDataAggregate orderDataAggregate = (AbstractDataAggregate) sourceNode.sourceClass.getDeclaredConstructor().newInstance();
+        AbstractDataAggregate dataAggregate = (AbstractDataAggregate) sourceNode.sourceClass.getDeclaredConstructor().newInstance();
+        //todo 嵌套属性的引用依然指向sourceNode,如何创建副本?
+        //实例化执行器中需注入的嵌套属性
+        for (String requirement : sourceNode.ignorePropertyList) {
+            AggregateBaseNode baseNode = sourceNode.propertyAggregateMap.get(requirement);
+            if (baseNode == null) {
+                throw new BusinessException(120_000, "实例化执行器异常-无法获取获取需注入属性的解析节点");
+            }
+            Object propertyInstance = baseNode.propertyInstance;
+            baseNode.writeMethod.invoke(dataAggregate, propertyInstance);
+        }
+
         Map<Method, Object> initMap = new HashMap<>();
         for (Map.Entry<String, Object> classEntry : sourceNode.resourcePropertyMap.entrySet()) {
             initMap.put(sourceNode.propertyAggregateMap.get(classEntry.getKey()).writeMethod, classEntry.getValue());
         }
-        orderDataAggregate.init(initMap);
-        return orderDataAggregate;
+        dataAggregate.init(initMap);
+        return dataAggregate;
+    }
+
+    private void setAggregateBindVal(AbstractDataAggregate instance, Method method, Object val) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
+        Class<?> declaringClass = method.getDeclaringClass();
+        while (instance.getClass() != declaringClass) {
+            declaringClass.getDeclaredConstructor().newInstance();
+        }
     }
 
     /***
@@ -865,7 +880,7 @@ public class DataAggregateAOP {
         return false;
     }
 
-    private AggregateSourceNode getOrCreateSourceNode(Class source, String className, AggregateTargetNode targetNode, Map<Integer, Integer> levelMap) throws ClassNotFoundException {
+    private AggregateSourceNode getOrCreateSourceNode(Class source, String className, AggregateTargetNode targetNode, Map<Integer, Integer> levelMap) throws ClassNotFoundException, NoSuchMethodException, InstantiationException, IllegalAccessException, InvocationTargetException {
         if (!AggregateSourceMap.containsKey(className)) {
             if (source == null) {
                 //尝试加载执行器
@@ -981,7 +996,7 @@ public class DataAggregateAOP {
                                 if (aggregatePrepare.getDescNode() == null) {
                                     aggregatePrepare.descNode = new Node("~", level);
                                 }
-                                aggregatePrepare.addCommonPrepareNode(aggregateBaseNode.initAggregateBaseNode(aggregateTargetPropertyName, tarProperty.isRequired()));
+                                aggregatePrepare.addCommonPrepareNode(aggregateBaseNode.initVal(aggregateTargetPropertyName, tarProperty.isRequired()));
                             } else {
                                 //list类型嵌套属性
                                 Node firstNode = aggregatePrepare.getDescNode();
@@ -1030,7 +1045,7 @@ public class DataAggregateAOP {
                                     }
                                 }
 
-                                tarNode.commonPrepareNodes.add(aggregateBaseNode.initAggregateBaseNode(aggregateTargetPropertyName, tarProperty.isRequired()));
+                                tarNode.commonPrepareNodes.add(aggregateBaseNode.initVal(aggregateTargetPropertyName, tarProperty.isRequired()));
                             }
                         }
                     }
@@ -1185,10 +1200,14 @@ public class DataAggregateAOP {
         private boolean container;
         private Class<? extends Collection> containerType;
         private Class<?> containerClass;
-        private Collection containerInstance;
         //所属容器(传递性-容器中泛型对应的属性container都为true)
         //todo 造成循环引用,问题?
         private AggregateBaseNode belongContainer;
+
+        //属性对应实例
+        private Object propertyInstance;
+        private Object preInstance;
+        private List<AggregateBaseNode> subPropertyNode = new ArrayList<>();
 
         public AggregateBaseNode(Method writeMethod, Method readMethod, Field field) {
             this.field = field;
@@ -1207,22 +1226,45 @@ public class DataAggregateAOP {
             }
         }
 
-        public AggregateBaseNode initAggregateBaseNode(String targetPropertyPath, boolean required) {
+        public AggregateBaseNode initVal(String targetPropertyPath, boolean required) {
             this.required = required;
             this.targetPropertyPath = targetPropertyPath;
             return this;
         }
 
-        public boolean addContainerElement(Object object) {
-            if (containerInstance == null) {
-                try {
-                    containerInstance = containerType.getDeclaredConstructor().newInstance();
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    throw new BusinessException(120_000, "数据聚合-实例化执行器属性容器异常");
+        public void initAggregateBaseNode(AggregateBaseNode previousBaseNode) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
+            if (containerType != null) {
+                propertyInstance = containerType.getDeclaredConstructor().newInstance();
+            } else {
+                propertyInstance = field.getType().getDeclaredConstructor().newInstance();
+            }
+
+            if (previousBaseNode != null) {
+                this.preInstance = previousBaseNode.propertyInstance;
+                previousBaseNode.subPropertyNode.add(this);
+                if (previousBaseNode.isContainer()) {
+                    //将容器下属的泛型解析指向容器本身
+                    this.setContainer(true);
+                    this.belongContainer = previousBaseNode.belongContainer;
+
+                    //对于容器类型为其初始化一个元素
+                    Object containerClassInstance;
+                    Collection preCollection = (Collection) previousBaseNode.propertyInstance;
+                    if (preCollection.iterator().hasNext()) {
+                        containerClassInstance = preCollection.iterator().next();
+                    } else {
+                        containerClassInstance = previousBaseNode.containerClass.getDeclaredConstructor().newInstance();
+                        preCollection.add(containerClassInstance);
+                    }
+                    this.writeMethod.invoke(containerClassInstance, propertyInstance);
+                } else {
+                    this.writeMethod.invoke(previousBaseNode.propertyInstance, propertyInstance);
                 }
             }
-            return containerInstance.add(object);
+        }
+
+        public boolean addContainerElement(Object object) {
+            return ((Collection) propertyInstance).add(object);
         }
 
         public <T> T getContainerElement() {
