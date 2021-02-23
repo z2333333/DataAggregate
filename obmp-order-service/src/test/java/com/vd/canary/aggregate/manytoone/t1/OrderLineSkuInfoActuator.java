@@ -17,12 +17,13 @@ public class OrderLineSkuInfoActuator extends AbstractOrderDataAggregate {
     @Transient
     private SkuQueryReq skuReq;
 
-    private List<SkuInfoBindResp> orderSkuInfos = new ArrayList<>();
+    private List<ProductInfoVoTest> skuInfos = new ArrayList<>();
 
     @Override
     public void doDataAggregate(Object... args) {
         System.out.println("根据商品id集合从企业服务获取数据...");
         SkuInfoBindResp skuInfoBindResp = new SkuInfoBindResp();
+        skuInfos.add(skuInfoBindResp);
         skuInfoBindResp.setHeadId("1342294065091596290");
         List<SkuInfoVO> skuInfoVOS = new ArrayList<>();
         skuInfoBindResp.setSkuInfoVOS(skuInfoVOS);
