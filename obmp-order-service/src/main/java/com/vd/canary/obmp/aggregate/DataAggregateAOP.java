@@ -292,7 +292,7 @@ public class DataAggregateAOP {
         } else {
             isList = propertyValue instanceof List;
             //维护node
-            //todo 以数据结构代替字符串操作
+            //todo 以数据结构代替字符串操作(即将展示路径如xx.[].xx用数据结构代替)
             String[] var = finalPath.split("\\.");
             if (!var[var.length - 1].contains("[")) {
                 Node curNode = node;
@@ -615,17 +615,11 @@ public class DataAggregateAOP {
                         //todo baseNode传入的是baseNode的上一级
                         baseNode.writeMethod.invoke(instance, value);
                     } else {
-                        //如果实际访问路径是List那么对应的执行器注入值也应为list
-
-//                        if (baseNode.isContainer()) {
-//                            //todo 对于展开节点各级都要new一个容器对象? 结合实际情况
-//                            if (baseNode.containerClass != null && baseNode.containerClass != value.getClass()) {
-//                                //todo 在解析时抛出?
-//                                throw new BusinessException(120_000, "数据聚合-聚合对象值的实际类型与进行绑定的执行器容器属性所指定的泛型不一致");
-//                            }
-//                            containerTypeInstance = j == 0 ? (belongContainer = baseNode.belongContainer).getContainerElement() : containerTypeInstance;
-//                            baseNode.writeMethod.invoke(containerTypeInstance, value);
-//                        }
+                        if (j == 0) {
+                            belongContainer = baseNode.belongContainer;
+                            containerTypeInstance = baseNode.getNodeElement();
+                        }
+                        baseNode.injectNodeVal(value, containerTypeInstance);
                     }
                 }
             }
@@ -633,10 +627,11 @@ public class DataAggregateAOP {
                 belongContainer.addContainerElement(containerTypeInstance);
             }
         }
-        if (belongContainer != null) {
-            //todo 何时执行清理 buildStatementList可能为多条不同属性
-            belongContainer.writeMethod.invoke(instance, belongContainer.propertyInstance);
-        }
+//        if (belongContainer != null) {
+//            //todo 何时执行清理 buildStatementList可能为多条不同属性
+//            belongContainer.writeMethod.invoke(instance, belongContainer.propertyInstance);
+//        }
+        //todo 生成执行器实例
         return instances;
     }
 
@@ -1207,6 +1202,7 @@ public class DataAggregateAOP {
         //属性对应实例
         private Object propertyInstance;
         private Object preInstance;
+        private AggregateBaseNode preAggregateBaseNode;
         private List<AggregateBaseNode> subPropertyNode = new ArrayList<>();
 
         public AggregateBaseNode(Method writeMethod, Method readMethod, Field field) {
@@ -1240,6 +1236,7 @@ public class DataAggregateAOP {
             }
 
             if (previousBaseNode != null) {
+                this.preAggregateBaseNode = previousBaseNode;
                 this.preInstance = previousBaseNode.propertyInstance;
                 previousBaseNode.subPropertyNode.add(this);
                 if (previousBaseNode.isContainer()) {
@@ -1263,16 +1260,20 @@ public class DataAggregateAOP {
             }
         }
 
+        public void injectNodeVal(Object val, Object instance) throws IllegalAccessException, InvocationTargetException {
+            this.writeMethod.invoke(instance, val);
+        }
+
         public boolean addContainerElement(Object object) {
             return ((Collection) propertyInstance).add(object);
         }
 
-        public <T> T getContainerElement() {
-            try {
-                return (T) containerClass.getDeclaredConstructor().newInstance();
-            } catch (Exception e) {
-                e.printStackTrace();
-                throw new BusinessException(120_000, "数据聚合-实例化执行器容器属性容器元素异常");
+        public <T> T getNodeElement() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
+            Object containerClassInstance;
+            if (preAggregateBaseNode.isContainer()) {
+                return (T) preAggregateBaseNode.containerClass.getDeclaredConstructor().newInstance();
+            } else {
+                return (T) preAggregateBaseNode.propertyInstance;
             }
         }
 
