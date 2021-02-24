@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * @author zx
@@ -11,6 +12,8 @@ import java.time.LocalDateTime;
  */
 @Data
 public class ProductInfoVoTest {
+
+    List<SkuInfoVO> skuInfoVOS;
     /**
      * 主键ID
      */

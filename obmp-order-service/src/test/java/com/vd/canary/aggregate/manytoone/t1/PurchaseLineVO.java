@@ -36,6 +36,11 @@ public class PurchaseLineVO implements Serializable {
     private String purchaseContractLineId;
 
     /**
+     * sku图片
+     */
+    private String skuPic;
+
+    /**
      *  税率 
      */
     private String taxCode;
