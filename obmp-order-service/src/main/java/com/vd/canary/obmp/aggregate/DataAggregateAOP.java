@@ -359,7 +359,7 @@ public class DataAggregateAOP {
      * @author zhengxin
      */
     //todo 按照执行器,聚合对象,以及分别对应的注解build模式重写?
-    private AggregateTargetNode parsingClass(StringBuffer absolutePathName, Class<?> clazz, AggregateTargetNode targetNode, AggregateSourceNode sourceNode, String type, Map<Integer, Integer> levelMap) throws ClassNotFoundException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
+    private AggregateTargetNode parsingClass(StringBuffer absolutePathName, Class<?> clazz, AggregateTargetNode targetNode, AggregateSourceNode sourceNode, String type, Map<Integer, Integer> levelMap) throws ClassNotFoundException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException, NoSuchFieldException {
         //todo 如果含有递归对象会有问题
         int hash = getHash(absolutePathName.toString(), clazz);
         if (!levelMap.containsKey(hash)) {
@@ -727,6 +727,7 @@ public class DataAggregateAOP {
     }
 
     public PropertyDescriptor findTar(Class<?> beanClass, String name) {
+        //todo 重写
         PropertyDescriptor[] properties = PropertyUtils.getPropertyDescriptors(beanClass);
         for (PropertyDescriptor property : properties) {
             //大小写敏感
@@ -877,7 +878,7 @@ public class DataAggregateAOP {
         return false;
     }
 
-    private AggregateSourceNode getOrCreateSourceNode(Class source, String className, AggregateTargetNode targetNode, Map<Integer, Integer> levelMap) throws ClassNotFoundException, NoSuchMethodException, InstantiationException, IllegalAccessException, InvocationTargetException {
+    private AggregateSourceNode getOrCreateSourceNode(Class source, String className, AggregateTargetNode targetNode, Map<Integer, Integer> levelMap) throws ClassNotFoundException, NoSuchMethodException, InstantiationException, IllegalAccessException, InvocationTargetException, NoSuchFieldException {
         if (!AggregateSourceMap.containsKey(className)) {
             if (source == null) {
                 //尝试加载执行器
@@ -894,6 +895,20 @@ public class DataAggregateAOP {
         }
 
         return AggregateSourceMap.get(className).clone();
+    }
+
+    public Object getClassInstance(Class<?> clazz) throws NoSuchFieldException, IllegalAccessException, NoSuchMethodException, InvocationTargetException, InstantiationException {
+        if (clazz.isPrimitive()) {
+            //clazz.class
+            //return
+           // map Integer.TYPE
+        }
+        Class type = (Class) clazz.getField("TYPE").get(null);
+        if (type.isPrimitive()) {
+            return clazz.getDeclaredConstructor(type).newInstance();
+        }
+        //todo 私有化的构造函数
+        return clazz.getDeclaredConstructor().newInstance();
     }
 
     /**
@@ -1191,7 +1206,7 @@ public class DataAggregateAOP {
         }
     }
 
-    static class AggregateBaseNode {
+    class AggregateBaseNode {
         private final Field field;
         //执行器属性读写方法
         private final Method readMethod;
@@ -1240,11 +1255,12 @@ public class DataAggregateAOP {
             return this;
         }
 
-        public void initAggregateBaseNode(AggregateBaseNode previousBaseNode) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
+        public void initAggregateBaseNode(AggregateBaseNode previousBaseNode) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException, NoSuchFieldException {
             if (containerType != null) {
                 propertyInstance = containerType.getDeclaredConstructor().newInstance();
             } else {
-                propertyInstance = field.getType().getDeclaredConstructor().newInstance();
+                //存在的问题 1.私有化的无参构造方法 2.基本类型的包装对象
+                propertyInstance = getClassInstance(field.getType());
             }
             if (previousBaseNode != null) {
                 this.preAggregateBaseNode = previousBaseNode;

@@ -85,6 +85,8 @@ public class ProductInfoVoTest {
      */
     private String modifyPriceCode;
 
+    private int test;
+
     /**
      * 调价状态
      */
