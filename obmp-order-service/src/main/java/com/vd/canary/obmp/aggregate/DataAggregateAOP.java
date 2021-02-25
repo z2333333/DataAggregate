@@ -897,18 +897,41 @@ public class DataAggregateAOP {
         return AggregateSourceMap.get(className).clone();
     }
 
+    static Map<Class, Class> basicTypeMap = new HashMap() {{
+        put(int.class, Integer.class);
+        put(byte.class, Byte.class);
+        put(short.class, Short.class);
+        put(long.class, Long.class);
+        put(float.class, Float.class);
+        put(double.class, Double.class);
+        put(boolean.class, Boolean.class);
+        put(char.class, Character.class);
+        put(Integer.class, int.class);
+        put(Byte.class, byte.class);
+        put(Short.class, short.class);
+        put(Long.class, long.class);
+        put(Float.class, float.class);
+        put(Double.class, double.class);
+        put(Boolean.class, boolean.class);
+        put(Character.class, char.class);
+    }};
+
     public Object getClassInstance(Class<?> clazz) throws NoSuchFieldException, IllegalAccessException, NoSuchMethodException, InvocationTargetException, InstantiationException {
+//        Class type = (Class) clazz.getField("TYPE").get(null);
+//        if (type.isPrimitive()) {
+//            return clazz.getDeclaredConstructor(type).newInstance();
+//        }
+
         if (clazz.isPrimitive()) {
-            //clazz.class
-            //return
-           // map Integer.TYPE
+            //基本类
+            return basicTypeMap.get(clazz).getDeclaredConstructor(clazz).newInstance();
+        } else if (basicTypeMap.containsKey(clazz)) {
+            //包装类
+            return clazz.getDeclaredConstructor(basicTypeMap.get(clazz)).newInstance();
+        } else {
+            //todo 私有化的构造函数
+            return clazz.getDeclaredConstructor().newInstance();
         }
-        Class type = (Class) clazz.getField("TYPE").get(null);
-        if (type.isPrimitive()) {
-            return clazz.getDeclaredConstructor(type).newInstance();
-        }
-        //todo 私有化的构造函数
-        return clazz.getDeclaredConstructor().newInstance();
     }
 
     /**
