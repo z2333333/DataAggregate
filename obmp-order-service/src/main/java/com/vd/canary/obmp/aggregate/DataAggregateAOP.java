@@ -381,7 +381,7 @@ public class DataAggregateAOP {
                     String bindSourceClassName = aggregateTargetBindProperty.actuatorClassName;
                     if (targetNode.bindPropertyMap.containsKey(bindSourceClassName)) {
                         Map<String, List<AggregateTargetBindProperty>> listMap = targetNode.bindPropertyMap.get(bindSourceClassName);
-                        if (targetNode.getTarBindProperty(listMap, List.of(bindSourcePropertyName), 0).size() > 1) {
+                        if (targetNode.getTarBindProperty(listMap, new ArrayList<>(List.of(bindSourcePropertyName)), 0).size() > 1) {
                             log.error("数据聚合-解析聚合对象异常,执行器属性重复绑定,class={},property={}", clazz.getName(), nextPathName);
                             throw new BusinessException(120_000, "数据聚合-聚合对象中绑定执行器属性重复");
                         }
@@ -834,7 +834,6 @@ public class DataAggregateAOP {
                 classMap = bindPropertyMap.get(sourceNode.sourceClass.getName());
                 defaultClassMap = bindPropertyMap.get("DEFAULT_CLASS_NAME");
 
-
                 Map<String, Object> reWriteCacheMap = new HashMap<>();
                 Map<String, List<String>> statementCacheMap = new HashMap<>(sourceNode.allowPropertyList.size());
                 for (int i = 0; i < instances.size(); i++) {
@@ -846,17 +845,30 @@ public class DataAggregateAOP {
                     dataAggregate.doDataAggregate();
 
                     //数据反写
-                    //todo 优先使用mapping注解
+                    //优先使用mapping注解
+                    //todo 与之前的解析模式结合
                     List<AggregateTargetBindProperty> tarProperties;
                     tarProperties = targetNode.getTarBindProperty(classMap, sourceNode.allowPropertyList, 1);
                     tarProperties = tarProperties.size() == 0 ? targetNode.getTarBindProperty(defaultClassMap, sourceNode.allowPropertyList, 1) : tarProperties;
-                    if (tarProperties.size() == 0) {
-                        //该执行器属性未指定绑定值(可能为无需绑定的类变量)
-                        //为减少不必要注解当前执行器里无法区分类变量与期望绑定变量
-                        continue;
-                    }
                     for (AggregateTargetBindProperty tarProperty : tarProperties) {
+                        List<String> targetStatementList = buildStatementList(responseData, new ArrayList(), tarProperty.aggregateTargetPropertyName, -1, -1, "", "write", new ArrayList<>(), null);
 
+                        for (int j = 0; j < targetStatementList.size(); j++) {
+                            String targetStatement = targetStatementList.get(j);
+                            AggregateBaseNode aggregateBaseNode = sourceNode.propertyAggregateMap.get(tarProperty.actuatorPropertyName);
+                            Object val = aggregateBaseNode.readMethod.invoke(dataAggregate);
+                            try {
+                                PropertyUtils.setProperty(responseData, targetStatement, val);
+                            } catch (NoSuchMethodException e) {
+                                //抛出该异常的情况
+                                //1.issue:lombok@Accessors(chain = true)注解生成的set方法无法被此工具类识别
+                                //2.buildStatementList中对write模式的处理(聚合对象中不需要执行器中的某些属性,但write模式中加进来了)-已取消
+                                log.error("数据聚合-数据反写异常,无法获取属性对应setter方法,路径={}", targetStatement, e);
+                            }
+                            if (!sourceNode.isSingleton()) {
+                                continue;
+                            }
+                        }
                     }
 
 
@@ -972,7 +984,9 @@ public class DataAggregateAOP {
             if (map == null) {
                 return aggregateTargetBindProperties;
             }
-            for (String sourcePropertyName : sourcePropertyNames) {
+            Iterator<String> iterator = sourcePropertyNames.iterator();
+            while (iterator.hasNext()) {
+                String sourcePropertyName = iterator.next();
                 if (map.containsKey(sourcePropertyName)) {
                     Optional<AggregateTargetBindProperty> targetProperty = map.get(sourcePropertyName).stream().filter(tarProperty -> {
                         if (tarProperty.nodeType == type) {
@@ -981,6 +995,7 @@ public class DataAggregateAOP {
                         return false;
                     }).findFirst();
                     if (targetProperty.isPresent()) {
+                        iterator.remove();
                         aggregateTargetBindProperties.add(targetProperty.get());
                     }
                 }
@@ -1031,8 +1046,8 @@ public class DataAggregateAOP {
 
                         AggregateTargetBindProperty tarProperty;
                         List<AggregateTargetBindProperty> tarProperties;
-                        tarProperties = getTarBindProperty(classMap, List.of(sourcePropertyName), 0);
-                        tarProperties = tarProperties.size() == 0 ? getTarBindProperty(defaultClassMap, List.of(sourcePropertyName), 0) : tarProperties;
+                        tarProperties = getTarBindProperty(classMap, new ArrayList<>(List.of(sourcePropertyName)), 0);
+                        tarProperties = tarProperties.size() == 0 ? getTarBindProperty(defaultClassMap, new ArrayList<>(List.of(sourcePropertyName)), 0) : tarProperties;
                         if (tarProperties.size() == 0) {
                             //该执行器属性未指定绑定值(可能为无需绑定的类变量)
                             //为减少不必要注解当前执行器里无法区分类变量与期望绑定变量

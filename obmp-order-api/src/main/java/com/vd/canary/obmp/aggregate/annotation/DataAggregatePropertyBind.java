@@ -39,4 +39,10 @@ public @interface DataAggregatePropertyBind {
      * false-聚合对象绑定属性为null时依然调用执行器
      */
     boolean required() default true;
+
+    /**
+     * 标示当前绑定值是否为处理结果的主键
+     * @return
+     */
+    boolean primary() default false;
 }
