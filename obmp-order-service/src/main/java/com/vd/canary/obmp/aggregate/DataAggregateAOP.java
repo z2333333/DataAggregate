@@ -323,7 +323,7 @@ public class DataAggregateAOP {
                     }
                 }
                 PropertyDescriptor propertyDescriptor = findTar(clazz, field.getName());//todo 不需要每次重新获取类,设置缓存
-                AggregateBaseNode baseNode = new AggregateBaseNode(propertyDescriptor.getWriteMethod(), propertyDescriptor.getReadMethod(), field);
+                AggregateBaseNode baseNode = new AggregateBaseNode(propertyDescriptor.getWriteMethod(), propertyDescriptor.getReadMethod(), field, nextPathName);
                 sourceNode.propertyAggregateMap.put(nextPathName, baseNode);
                 baseNode.initAggregateBaseNode(sourceNode.propertyAggregateMap.get(tmpAbsolutePathName));
             } else {
@@ -346,7 +346,7 @@ public class DataAggregateAOP {
                         bindSourceClassName = bindClassStr;
                     }
 
-                    aggregateTargetBindProperties.add(new AggregateTargetBindProperty(bindName, nextPathName, propertyBind.required(), 0, bindSourceClassName, level));
+                    aggregateTargetBindProperties.add(new AggregateTargetBindProperty(bindName, nextPathName, propertyBind.required(), 0, bindSourceClassName, propertyBind.primary(), level));
                 }
                 if (field.isAnnotationPresent(DataAggregatePropertyMapping.class)) {
                     DataAggregatePropertyMapping propertyMapping = field.getAnnotation(DataAggregatePropertyMapping.class);
@@ -369,7 +369,7 @@ public class DataAggregateAOP {
 
                     }
                     //todo 1.字段-在聚合对象中查找当前层级的同名字段 2.属性-查找当前层级同名属性 3.剩余字段如何处理?
-                    aggregateTargetBindProperties.add(new AggregateTargetBindProperty(value, nextPathName, true, 1, bindSourceClassName, level));
+                    aggregateTargetBindProperties.add(new AggregateTargetBindProperty(value, nextPathName, true, 1, bindSourceClassName, false, level));
                 }
 
                 //约定 聚合对象下相同执行器可出现多次(需要指定别名)
@@ -846,12 +846,13 @@ public class DataAggregateAOP {
 
                     //数据反写
                     //优先使用mapping注解
-                    //todo 与之前的解析模式结合
+                    //todo 与之前的解析模式结合,执行完的结果是否继续写到sourcenode中去
                     List<AggregateTargetBindProperty> tarProperties;
                     tarProperties = targetNode.getTarBindProperty(classMap, sourceNode.allowPropertyList, 1);
                     tarProperties = tarProperties.size() == 0 ? targetNode.getTarBindProperty(defaultClassMap, sourceNode.allowPropertyList, 1) : tarProperties;
                     for (AggregateTargetBindProperty tarProperty : tarProperties) {
                         List<String> targetStatementList = buildStatementList(responseData, new ArrayList(), tarProperty.aggregateTargetPropertyName, -1, -1, "", "write", new ArrayList<>(), null);
+                        List<String> sourceStatementList = buildStatementList(responseData, new ArrayList(), tarProperty.actuatorPropertyName, -1, -1, "", "read", new ArrayList<>(), null);
 
                         for (int j = 0; j < targetStatementList.size(); j++) {
                             String targetStatement = targetStatementList.get(j);
@@ -866,6 +867,7 @@ public class DataAggregateAOP {
                                 log.error("数据聚合-数据反写异常,无法获取属性对应setter方法,路径={}", targetStatement, e);
                             }
                             if (!sourceNode.isSingleton()) {
+                                //todo 非单例有问题
                                 continue;
                             }
                         }
@@ -1065,7 +1067,10 @@ public class DataAggregateAOP {
                                 if (aggregatePrepare.getDescNode() == null) {
                                     aggregatePrepare.descNode = new Node("~", level);
                                 }
-                                aggregatePrepare.addCommonPrepareNode(aggregateBaseNode.initVal(aggregateTargetPropertyName, tarProperty.isRequired()));
+                                if (tarProperty.primary) {
+                                    aggregatePrepare.aggregateSourceNode.primaryAggregateBaseNode = aggregateBaseNode;
+                                }
+                                aggregatePrepare.addCommonPrepareNode(aggregateBaseNode.initVal(aggregateTargetPropertyName, tarProperty.isRequired(), tarProperty.primary));
                             } else {
                                 //list类型嵌套属性
                                 Node firstNode = aggregatePrepare.getDescNode();
@@ -1114,7 +1119,10 @@ public class DataAggregateAOP {
                                     }
                                 }
 
-                                tarNode.commonPrepareNodes.add(aggregateBaseNode.initVal(aggregateTargetPropertyName, tarProperty.isRequired()));
+                                if (tarProperty.primary) {
+                                    aggregatePrepare.aggregateSourceNode.primaryAggregateBaseNode = aggregateBaseNode;
+                                }
+                                tarNode.commonPrepareNodes.add(aggregateBaseNode.initVal(aggregateTargetPropertyName, tarProperty.isRequired(), tarProperty.primary));
                             }
                         }
                     }
@@ -1127,6 +1135,7 @@ public class DataAggregateAOP {
     static class AggregateSourceNode implements Cloneable {
         /* 标记执行器是否单例 */
         boolean singleton = false;
+        AggregateBaseNode primaryAggregateBaseNode;
         final Class<?> sourceClass;
         //待注入值的属性
         final List<String> ignorePropertyList = new ArrayList<>();
@@ -1185,15 +1194,18 @@ public class DataAggregateAOP {
         private final String aggregateTargetPropertyName;
         //标示绑定到执行器的属性是否必要
         private final boolean required;
+        private final boolean primary;
         //list类型嵌套属性的层级(非List下的普通属性为0)
         private int level;
 
-        public AggregateTargetBindProperty(String v1, String v2, boolean v3, int v5, String v6, int level) {
+        public AggregateTargetBindProperty(String v1, String v2, boolean v3, int v5, String v6, boolean v7, int level) {
             this.actuatorPropertyName = v1;
             this.aggregateTargetPropertyName = v2;
             this.required = v3;
             this.nodeType = v5;
+            this.primary = v7;
             actuatorClassName = v6 == null ? actuatorClassName : v6;
+
             this.level = level;
         }
 
@@ -1271,6 +1283,9 @@ public class DataAggregateAOP {
 
         //标示绑定到执行器的属性是否必要
         private boolean required;
+        private boolean primary;
+        //执行器对象属性路径
+        private String aggregatePropertyPath;
         //聚合对象属性路径
         private String targetPropertyPath;
 
@@ -1289,10 +1304,11 @@ public class DataAggregateAOP {
         private AggregateBaseNode preAggregateBaseNode;
         private List<AggregateBaseNode> subPropertyNode = new ArrayList<>();
 
-        public AggregateBaseNode(Method writeMethod, Method readMethod, Field field) {
+        public AggregateBaseNode(Method writeMethod, Method readMethod, Field field, String aggregatePropertyPath) {
             this.field = field;
             this.readMethod = readMethod;
             this.writeMethod = writeMethod;
+            this.aggregatePropertyPath = aggregatePropertyPath;
             //todo set类型
             if (field.getType().isAssignableFrom(List.class)) {
                 this.container = true;
@@ -1306,7 +1322,8 @@ public class DataAggregateAOP {
             }
         }
 
-        public AggregateBaseNode initVal(String targetPropertyPath, boolean required) {
+        public AggregateBaseNode initVal(String targetPropertyPath, boolean required,boolean primary) {
+            this.primary = primary;
             this.required = required;
             this.targetPropertyPath = targetPropertyPath;
             return this;
@@ -1347,10 +1364,6 @@ public class DataAggregateAOP {
         public void injectNodeVal(Object val, Object instance) throws IllegalAccessException, InvocationTargetException {
             this.writeMethod.invoke(instance, val);
         }
-
-//        public boolean addContainerElement(Object object) {
-//            return ((Collection) propertyInstance).add(object);
-//        }
 
         public <T> T getNodeElementCloneable() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
             if (preAggregateBaseNode.isContainer()) {
