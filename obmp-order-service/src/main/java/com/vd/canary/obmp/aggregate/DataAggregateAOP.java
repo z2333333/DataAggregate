@@ -56,7 +56,24 @@ public class DataAggregateAOP {
         return proceed;
     }*/
 
-    static Map<Class, Object[]> basicTypeMap = new HashMap() {{ put(int.class, new Object[]{Integer.class,0});put(byte.class, new Object[]{Byte.class,0xFFFFFFFF});put(short.class, new Object[]{Short.class,0xFFFFFFFF});put(long.class, new Object[]{Long.class,0});put(float.class, new Object[]{Float.class,0});put(double.class, new Object[]{Double.class,0});put(boolean.class, new Object[]{Boolean.class,false});put(char.class, new Object[]{Character.class,'\u0000'});put(Integer.class, new Object[]{int.class,0});put(Byte.class, new Object[]{byte.class,0xFFFFFFFF});put(Short.class, new Object[]{Short.class,0xFFFFFFFF});put(Long.class, new Object[]{Long.class,0});put(Float.class, new Object[]{float.class,0});put(Double.class, new Object[]{double.class,0});put(Boolean.class, new Object[]{boolean.class,false});put(Character.class, new Object[]{char.class,'\u0000'}); }};
+    static Map<Class, Object[]> basicTypeMap = new HashMap() {{
+        put(int.class, new Object[]{Integer.class, 0});
+        put(byte.class, new Object[]{Byte.class, 0xFFFFFFFF});
+        put(short.class, new Object[]{Short.class, 0xFFFFFFFF});
+        put(long.class, new Object[]{Long.class, 0});
+        put(float.class, new Object[]{Float.class, 0});
+        put(double.class, new Object[]{Double.class, 0});
+        put(boolean.class, new Object[]{Boolean.class, false});
+        put(char.class, new Object[]{Character.class, '\u0000'});
+        put(Integer.class, new Object[]{int.class, 0});
+        put(Byte.class, new Object[]{byte.class, 0xFFFFFFFF});
+        put(Short.class, new Object[]{Short.class, 0xFFFFFFFF});
+        put(Long.class, new Object[]{Long.class, 0});
+        put(Float.class, new Object[]{float.class, 0});
+        put(Double.class, new Object[]{double.class, 0});
+        put(Boolean.class, new Object[]{boolean.class, false});
+        put(Character.class, new Object[]{char.class, '\u0000'});
+    }};
 
     private Object setActuatorProperty(Object responseData, Method writeMethod, AggregateBaseNode baseNode, String statementIndex, AbstractDataAggregate orderDataAggregateIndex) throws IllegalAccessException, InvocationTargetException, NoSuchMethodException {
         Object propertyValue = PropertyUtils.getProperty(responseData, statementIndex);
@@ -502,6 +519,82 @@ public class DataAggregateAOP {
         return instances;
     }
 
+    private void buildDataAggregate1(Object sourceData, AggregatePrepare aggregatePrepare) throws InvocationTargetException, IllegalAccessException, NoSuchMethodException, InstantiationException {
+        Node firstNode = aggregatePrepare.mappingNode;
+        if (firstNode == null) {
+            return;
+        }
+        AbstractDataAggregate instance = null;
+        //AggregateBaseNode belongContainer = null;
+        AggregateSourceNode aggregateSourceNode = aggregatePrepare.aggregateSourceNode;
+
+        Node lastNode = firstNode.next.get(0);
+
+        //填充根节点绑定值
+        createNodeLevelData(sourceData, firstNode, "~", sourceData instanceof List);
+
+        //根据层级节点计算
+        //从属性理论路径构建实际访问路径
+        List<String> buildStatementList = buildStatementList(sourceData, new ArrayList(), lastNode.commonPrepareNodes.get(0).targetPropertyPath, -1, -1, "", "read", new ArrayList<>(), lastNode);
+        for (int i = 0; i < buildStatementList.size(); i++) {
+            String buildStatement = buildStatementList.get(i);
+
+            //Map<Method, Object>[] maps = filterTarStatementList(buildStatement, aggregatePrepare.nodeMap);
+            //展开节点注入各级依赖值
+            Object containerTypeInstance = null;
+            String str = "";
+            String[] statementSplit = buildStatement.split("\\.");
+            for (int j = 0; j < statementSplit.length; j++) {
+                String sj = statementSplit[j];
+                if (sj.charAt(0) == '[') {
+                    //处理[].xxx的情况
+                    str = sj;
+                    continue;
+                }
+
+                Map<AggregateBaseNode, Object> methodObjectMap;
+                int index = sj.lastIndexOf("[");
+                if (index == -1) {
+                    //处理根节点
+                    methodObjectMap = aggregatePrepare.nodeMap.get("~").nodeBindValMap.get("~");
+                } else {
+                    str = j == 0 ? sj : str + "." + sj;
+                    String nodeName = sj.substring(0, index);
+                    Node node = aggregatePrepare.nodeMap.get(nodeName);
+                    methodObjectMap = node.nodeBindValMap.get(str);
+                }
+                if (methodObjectMap == null) {
+                    continue;
+                }
+                //处理每一级展开节点下的所有绑定值(xx[].all)
+                for (Map.Entry<AggregateBaseNode, Object> methodObjectEntry : methodObjectMap.entrySet()) {
+                    AggregateBaseNode baseNode = methodObjectEntry.getKey();
+                    aggregateSourceNode.waitResetBaseNodes.add(baseNode);
+                    Object value = methodObjectEntry.getValue();
+                    if (!aggregateSourceNode.isSingleton()) {
+                        //todo baseNode传入的是baseNode的上一级
+                        baseNode.writeMethod.invoke(instance, value);
+                    } else {
+                        if (j == 0) {
+                            //belongContainer = baseNode.belongContainer;
+                            containerTypeInstance = baseNode.getNodeElementCloneable();
+                        }
+                        baseNode.injectNodeVal(value, containerTypeInstance);
+                    }
+                }
+            }
+        }
+//        for (AbstractDataAggregate abstractDataAggregate : instances) {
+//            //从节点回归属性到实例节点
+//            initDataAggregateInstance(aggregateSourceNode, abstractDataAggregate);
+//        }
+
+//        Iterator<AggregateBaseNode> iterator = waitResetBaseNode.iterator();
+//        while (iterator.hasNext()) {
+//            iterator.next().clear();
+//        }
+    }
+
     /**
      * 从实际可访问路径中匹配执行器中待反写的属性对应的访问路径
      *
@@ -843,7 +936,7 @@ public class DataAggregateAOP {
                         continue;
                     }
                     dataAggregate.doDataAggregate();
-
+                    buildDataAggregate1(dataAggregate, aggregatePrepare);
                     //数据反写
                     //优先使用mapping注解
                     //todo 与之前的解析模式结合,执行完的结果是否继续写到sourcenode中去
@@ -1005,6 +1098,23 @@ public class DataAggregateAOP {
             return aggregateTargetBindProperties;
         }
 
+        public List<AggregateTargetBindProperty> getTarBindProperty(Map<String, List<AggregateTargetBindProperty>> map, List<String> sourcePropertyNames) {
+            List<AggregateTargetBindProperty> aggregateTargetBindProperties = new ArrayList<>();
+
+            if (map == null) {
+                return aggregateTargetBindProperties;
+            }
+            Iterator<String> iterator = sourcePropertyNames.iterator();
+            while (iterator.hasNext()) {
+                String sourcePropertyName = iterator.next();
+                if (map.containsKey(sourcePropertyName)) {
+                    List<AggregateTargetBindProperty> bindProperties = map.get(sourcePropertyName);
+                    aggregateTargetBindProperties.addAll(bindProperties);
+                }
+            }
+            return aggregateTargetBindProperties;
+        }
+
         public AggregateTargetNode(Class<?> sourceClass) {
             this.sourceClass = sourceClass;
         }
@@ -1035,43 +1145,30 @@ public class DataAggregateAOP {
                             aggregatePrepares.add(aggregatePrepare);
                         }
                     }
-
-                    //遍历执行器属性,如果属性在聚合对象中存在绑定关系,则建立描述节点
+                    //遍历执行器属性,如果属性在聚合对象中存在绑定/映射关系,则建立描述节点
                     for (Map.Entry<String, AggregateBaseNode> entry : sourceNode.propertyAggregateMap.entrySet()) {
                         String sourcePropertyName = entry.getKey();
-                        AggregateBaseNode aggregateBaseNode = entry.getValue();
 
-                        if (sourceNode.resourcePropertyMap.containsKey(sourcePropertyName) || sourceNode.allowPropertyList.contains(sourcePropertyName)) {
-                            //该属性需要从spring中获取或为待反写的值
+                        if (sourceNode.resourcePropertyMap.containsKey(sourcePropertyName)) {
+                            //该属性需要从spring中获取
                             continue;
                         }
 
-                        AggregateTargetBindProperty tarProperty;
+                        AggregateBaseNode aggregateBaseNode = entry.getValue();
                         List<AggregateTargetBindProperty> tarProperties;
-                        tarProperties = getTarBindProperty(classMap, new ArrayList<>(List.of(sourcePropertyName)), 0);
-                        tarProperties = tarProperties.size() == 0 ? getTarBindProperty(defaultClassMap, new ArrayList<>(List.of(sourcePropertyName)), 0) : tarProperties;
+                        tarProperties = getTarBindProperty(classMap, new ArrayList<>(List.of(sourcePropertyName)));
+                        tarProperties = tarProperties.size() == 0 ? getTarBindProperty(defaultClassMap, new ArrayList<>(List.of(sourcePropertyName))) : tarProperties;
                         if (tarProperties.size() == 0) {
                             //该执行器属性未指定绑定值(可能为无需绑定的类变量)
                             //为减少不必要注解当前执行器里无法区分类变量与期望绑定变量
                             continue;
                         }
 
-                        tarProperty = tarProperties.get(0);
-                        Method writeMethod = aggregateBaseNode.writeMethod;
-                        String aggregateTargetPropertyName = tarProperty.getAggregateTargetPropertyName();
-                        if (tarProperty.nodeType == 0) {
-                            //绑定类型
-                            int level = tarProperty.level;
-                            if (level == 0) {
-                                //普通属性
-                                if (aggregatePrepare.getDescNode() == null) {
-                                    aggregatePrepare.descNode = new Node("~", level);
-                                }
-                                if (tarProperty.primary) {
-                                    aggregatePrepare.aggregateSourceNode.primaryAggregateBaseNode = aggregateBaseNode;
-                                }
-                                aggregatePrepare.addCommonPrepareNode(aggregateBaseNode.initVal(aggregateTargetPropertyName, tarProperty.isRequired(), tarProperty.primary));
-                            } else {
+                        for (AggregateTargetBindProperty tarProperty : tarProperties) {
+                            if (tarProperty.nodeType == 0) {
+                                String aggregateTargetPropertyName = tarProperty.getAggregateTargetPropertyName();
+                                //绑定类型
+                                int level = tarProperty.level;
                                 //list类型嵌套属性
                                 Node firstNode = aggregatePrepare.getDescNode();
                                 String[] nodePath = aggregateTargetPropertyName.split("\\.");
@@ -1122,7 +1219,62 @@ public class DataAggregateAOP {
                                 if (tarProperty.primary) {
                                     aggregatePrepare.aggregateSourceNode.primaryAggregateBaseNode = aggregateBaseNode;
                                 }
-                                tarNode.commonPrepareNodes.add(aggregateBaseNode.initVal(aggregateTargetPropertyName, tarProperty.isRequired(), tarProperty.primary));
+                                aggregatePrepare.addCommonPrepareNode(aggregateBaseNode.initVal(aggregateTargetPropertyName, tarProperty.isRequired(), tarProperty.primary));
+                            } else {
+                                String actuatorPropertyName = tarProperty.actuatorPropertyName;
+                                //绑定类型
+                                int level = tarProperty.level;//todo 这里的level是聚合对象的?
+                                //list类型嵌套属性
+                                Node firstNode = aggregatePrepare.mappingNode;
+                                String[] nodePath = actuatorPropertyName.split("\\.");
+                                if (firstNode == null) {
+                                    //初始化链路节点(可能从任意节点开始)
+                                    List<Node> nodes = new ArrayList<>(List.of(new Node("~", 0)));
+                                    int index = 0;
+                                    while (index < level) {
+                                        Node curNode = new Node(nodePath[index], index + 1);//todo 位移
+                                        nodes.add(curNode);
+                                        index++;
+                                    }
+                                    for (int i = 0; i < nodes.size(); i++) {
+                                        Node curNode = nodes.get(i);
+                                        if (i == 0) {
+                                            firstNode = curNode;
+                                            aggregatePrepare.mappingNode = firstNode;
+                                        }
+                                        curNode.prev = i == 0 ? null : nodes.get(i - 1);
+                                        if (i + 1 < nodes.size()) {
+                                            curNode.next.add(nodes.get(i + 1));
+                                        }
+                                    }
+                                }
+
+                                //遍历链路获取当前Level对应的最终节点
+                                Node tarNode = firstNode;
+                                for (int i = 0; i < level; i++) {
+                                    Node curNode = null;
+                                    for (Node node : tarNode.next) {
+                                        if (nodePath[i].equals(node.curLevelPropertyName)) {
+                                            curNode = node;
+                                            continue;
+                                        }
+                                    }
+
+                                    if (curNode != null) {
+                                        tarNode = curNode;
+                                    } else {
+                                        //节点不存在则新建
+                                        Node newNode = new Node(nodePath[i], i + 1);
+                                        newNode.prev = tarNode;
+                                        tarNode.next.add(newNode);
+                                        tarNode = newNode;
+                                    }
+                                }
+
+                                if (tarProperty.primary) {
+                                    aggregatePrepare.aggregateSourceNode.primaryAggregateBaseNode = aggregateBaseNode;
+                                }
+                                aggregatePrepare.mappingNode.commonPrepareNodes.add(aggregateBaseNode.initVal(actuatorPropertyName, tarProperty.isRequired(), tarProperty.primary));
                             }
                         }
                     }
@@ -1232,6 +1384,8 @@ public class DataAggregateAOP {
         private Node descNode;
         private Node lastNode;
 
+        private Node mappingNode;
+
         private Map<String, Node> nodeMap = new HashMap<>();
 
         public AggregatePrepare(AggregateSourceNode var) {
@@ -1322,7 +1476,7 @@ public class DataAggregateAOP {
             }
         }
 
-        public AggregateBaseNode initVal(String targetPropertyPath, boolean required,boolean primary) {
+        public AggregateBaseNode initVal(String targetPropertyPath, boolean required, boolean primary) {
             this.primary = primary;
             this.required = required;
             this.targetPropertyPath = targetPropertyPath;
