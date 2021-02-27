@@ -519,6 +519,7 @@ public class DataAggregateAOP {
         return instances;
     }
 
+    // TODO: 这里反写mapping的值,或者把整个反写逻辑放过来?
     private void buildDataAggregate1(Object sourceData, AggregatePrepare aggregatePrepare) throws InvocationTargetException, IllegalAccessException, NoSuchMethodException, InstantiationException {
         Node firstNode = aggregatePrepare.mappingNode;
         if (firstNode == null) {
@@ -534,8 +535,9 @@ public class DataAggregateAOP {
         createNodeLevelData(sourceData, firstNode, "~", sourceData instanceof List);
 
         //根据层级节点计算
-        //从属性理论路径构建实际访问路径
+        //从属性理论路径构建实际访问路径(同时维护了节点此次的值)
         List<String> buildStatementList = buildStatementList(sourceData, new ArrayList(), lastNode.commonPrepareNodes.get(0).targetPropertyPath, -1, -1, "", "read", new ArrayList<>(), lastNode);
+        //todo 维护mapping的值
         for (int i = 0; i < buildStatementList.size(); i++) {
             String buildStatement = buildStatementList.get(i);
 
@@ -809,7 +811,7 @@ public class DataAggregateAOP {
         for (AggregateBaseNode prepareNode : node.commonPrepareNodes) {
             for (int i = 0; i < sources.size(); i++) {
                 try {
-                    String[] tarPaths = prepareNode.targetPropertyPath.split("\\.");
+                    String[] tarPaths = node.nodeType == 0 ? prepareNode.targetPropertyPath.split("\\.") : prepareNode.aggregatePropertyPath.split("\\.");
                     String path = tarPaths[tarPaths.length - 1];
                     Object prepareVal = PropertyUtils.getProperty(sources.get(i), path);
                     String var = isList ? statement + "[" + i + "]" : statement;
@@ -1165,7 +1167,8 @@ public class DataAggregateAOP {
                         }
 
                         for (AggregateTargetBindProperty tarProperty : tarProperties) {
-                            if (tarProperty.nodeType == 0) {
+                            int nodeType = tarProperty.nodeType;
+                            if (nodeType == 0) {
                                 String aggregateTargetPropertyName = tarProperty.getAggregateTargetPropertyName();
                                 //绑定类型
                                 int level = tarProperty.level;
@@ -1174,10 +1177,10 @@ public class DataAggregateAOP {
                                 String[] nodePath = aggregateTargetPropertyName.split("\\.");
                                 if (firstNode == null) {
                                     //初始化链路节点(可能从任意节点开始)
-                                    List<Node> nodes = new ArrayList<>(List.of(new Node("~", 0)));
+                                    List<Node> nodes = new ArrayList<>(List.of(new Node("~", 0, nodeType)));
                                     int index = 0;
                                     while (index < level) {
-                                        Node curNode = new Node(nodePath[index], index + 1);//todo 位移
+                                        Node curNode = new Node(nodePath[index], index + 1, nodeType);//todo 位移
                                         nodes.add(curNode);
                                         index++;
                                     }
@@ -1194,7 +1197,7 @@ public class DataAggregateAOP {
                                     }
                                 }
 
-                                //遍历链路获取当前Level对应的最终节点
+                                //遍历链路获取当前Level对应的节点
                                 Node tarNode = firstNode;
                                 for (int i = 0; i < level; i++) {
                                     Node curNode = null;
@@ -1209,7 +1212,7 @@ public class DataAggregateAOP {
                                         tarNode = curNode;
                                     } else {
                                         //节点不存在则新建
-                                        Node newNode = new Node(nodePath[i], i + 1);
+                                        Node newNode = new Node(nodePath[i], i + 1, nodeType);
                                         newNode.prev = tarNode;
                                         tarNode.next.add(newNode);
                                         tarNode = newNode;
@@ -1219,20 +1222,19 @@ public class DataAggregateAOP {
                                 if (tarProperty.primary) {
                                     aggregatePrepare.aggregateSourceNode.primaryAggregateBaseNode = aggregateBaseNode;
                                 }
-                                aggregatePrepare.addCommonPrepareNode(aggregateBaseNode.initVal(aggregateTargetPropertyName, tarProperty.isRequired(), tarProperty.primary));
+                                aggregatePrepare.addCommonPrepareNode(tarNode, aggregateBaseNode.initVal(aggregateTargetPropertyName, tarProperty.isRequired(), tarProperty.primary));
                             } else {
-                                String actuatorPropertyName = tarProperty.actuatorPropertyName;
-                                //绑定类型
+                                //映射类型
                                 int level = tarProperty.level;//todo 这里的level是聚合对象的?
                                 //list类型嵌套属性
                                 Node firstNode = aggregatePrepare.mappingNode;
-                                String[] nodePath = actuatorPropertyName.split("\\.");
+                                String[] nodePath = tarProperty.actuatorPropertyName.split("\\.");
                                 if (firstNode == null) {
                                     //初始化链路节点(可能从任意节点开始)
-                                    List<Node> nodes = new ArrayList<>(List.of(new Node("~", 0)));
+                                    List<Node> nodes = new ArrayList<>(List.of(new Node("~", 0, nodeType)));
                                     int index = 0;
                                     while (index < level) {
-                                        Node curNode = new Node(nodePath[index], index + 1);//todo 位移
+                                        Node curNode = new Node(nodePath[index], index + 1, nodeType);//todo 位移
                                         nodes.add(curNode);
                                         index++;
                                     }
@@ -1264,7 +1266,7 @@ public class DataAggregateAOP {
                                         tarNode = curNode;
                                     } else {
                                         //节点不存在则新建
-                                        Node newNode = new Node(nodePath[i], i + 1);
+                                        Node newNode = new Node(nodePath[i], i + 1, nodeType);
                                         newNode.prev = tarNode;
                                         tarNode.next.add(newNode);
                                         tarNode = newNode;
@@ -1274,7 +1276,7 @@ public class DataAggregateAOP {
                                 if (tarProperty.primary) {
                                     aggregatePrepare.aggregateSourceNode.primaryAggregateBaseNode = aggregateBaseNode;
                                 }
-                                aggregatePrepare.mappingNode.commonPrepareNodes.add(aggregateBaseNode.initVal(actuatorPropertyName, tarProperty.isRequired(), tarProperty.primary));
+                                aggregatePrepare.addCommonPrepareNode(tarNode, aggregateBaseNode.initVal(tarProperty.getAggregateTargetPropertyName(), tarProperty.isRequired(), tarProperty.primary));
                             }
                         }
                     }
@@ -1416,8 +1418,8 @@ public class DataAggregateAOP {
             this.lastNode = nextNodes.get(0);
         }
 
-        public void addCommonPrepareNode(AggregateBaseNode node) {
-            this.descNode.commonPrepareNodes.add(node);
+        public void addCommonPrepareNode(Node tarNode, AggregateBaseNode node) {
+            tarNode.commonPrepareNodes.add(node);
         }
 
         public Node getDescNode() {
@@ -1566,6 +1568,9 @@ public class DataAggregateAOP {
     }
 
     private static class Node {
+        //节点类型(绑定/映射)
+        //node应该与类型无关,buildStatementList()功能复杂导致需要在此传递
+        int nodeType;
         Node prev;
         //list属性绑定列表(可能存在多个),不存在List类型时为null,标记作用(每个List中存在任意属性)
         List<Node> next = new ArrayList<>();
@@ -1579,8 +1584,9 @@ public class DataAggregateAOP {
         //当前节点在聚合对象中的属性名
         private String curLevelPropertyName;
 
-        Node(String curLevelPropertyName, int level) {
+        Node(String curLevelPropertyName, int level,int nodeType) {
             this.level = level;
+            this.nodeType = nodeType;
             this.id = curLevelPropertyName + "-" + level;
             this.curLevelPropertyName = curLevelPropertyName;
         }
