@@ -121,6 +121,7 @@ public class DataAggregateAOP {
     //todo 问题:1.多层嵌套属性最外层为空时里层无需遍历 2.多层嵌套属性上层属性不为空时下层无需重新获取最外层
     //todo 优化String(path计算的用node的curLevelPropertyName与commonPrepareNodes.path)
     //todo 递归的性能与溢出隐患问题-尾递归能否解决
+    //todo BeanUtils性能:与反射存在100倍差距(考虑替换为完全自行反射) https://www.xiaobo.li/?p=1457 https://www.cnblogs.com/Frank-Hao/p/5839140.html
     private List buildStatementList(Object source, List statementList, String nextPath, Integer transferPrefixIndex, Integer transferSuffixIndex, String finalPath, String Mode, List<String> ignoreList, Node node) throws IllegalAccessException, InvocationTargetException {
         //todo 多层list还没测
         if ("".equals(nextPath)) {
@@ -529,15 +530,15 @@ public class DataAggregateAOP {
         //AggregateBaseNode belongContainer = null;
         AggregateSourceNode aggregateSourceNode = aggregatePrepare.aggregateSourceNode;
 
-        Node lastNode = firstNode.next.get(0);
+        Node lastNode = firstNode.next.get(0);//todo 获取最终级
 
         //填充根节点绑定值
         createNodeLevelData(sourceData, firstNode, "~", sourceData instanceof List);
 
         //根据层级节点计算
         //从属性理论路径构建实际访问路径(同时维护了节点此次的值)
-        List<String> buildStatementList = buildStatementList(sourceData, new ArrayList(), lastNode.commonPrepareNodes.get(0).targetPropertyPath, -1, -1, "", "read", new ArrayList<>(), lastNode);
-        //todo 维护mapping的值
+        List<String> buildStatementList = buildStatementList(sourceData, new ArrayList(), lastNode.commonPrepareNodes.get(0).aggregatePropertyPath, -1, -1, "", "read", new ArrayList<>(), lastNode);
+        //todo 维护resp的绑定与映射读写方法
         for (int i = 0; i < buildStatementList.size(); i++) {
             String buildStatement = buildStatementList.get(i);
 
@@ -813,6 +814,7 @@ public class DataAggregateAOP {
                 try {
                     String[] tarPaths = node.nodeType == 0 ? prepareNode.targetPropertyPath.split("\\.") : prepareNode.aggregatePropertyPath.split("\\.");
                     String path = tarPaths[tarPaths.length - 1];
+                    //todo 使用维护的resp的读写方法?
                     Object prepareVal = PropertyUtils.getProperty(sources.get(i), path);
                     String var = isList ? statement + "[" + i + "]" : statement;
                     node.addBindVal(prepareNode, prepareVal, var);
