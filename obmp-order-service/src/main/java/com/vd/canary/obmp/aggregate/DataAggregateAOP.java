@@ -492,7 +492,7 @@ public class DataAggregateAOP {
         }
         for (AbstractDataAggregate abstractDataAggregate : instances) {
             //从节点回归属性到实例节点
-            initDataAggregateInstance(aggregateSourceNode, instance);
+            initDataAggregateInstance(aggregateSourceNode, abstractDataAggregate);
         }
 
 //        Iterator<AggregateBaseNode> iterator = waitResetBaseNode.iterator();
