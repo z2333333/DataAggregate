@@ -121,7 +121,7 @@ public class DataAggregateAOP {
     //todo 问题:1.多层嵌套属性最外层为空时里层无需遍历 2.多层嵌套属性上层属性不为空时下层无需重新获取最外层
     //todo 优化String(path计算的用node的curLevelPropertyName与commonPrepareNodes.path)
     //todo 递归的性能与溢出隐患问题-尾递归能否解决
-    //todo BeanUtils性能:与反射存在100倍差距(考虑替换为完全自行反射) https://www.xiaobo.li/?p=1457 https://www.cnblogs.com/Frank-Hao/p/5839140.html
+    //todo BeanUtils性能:与反射存在2个数量级差距(考虑替换为完全自行反射) https://www.xiaobo.li/?p=1457 https://www.cnblogs.com/Frank-Hao/p/5839140.html
     private List buildStatementList(Object source, List statementList, String nextPath, Integer transferPrefixIndex, Integer transferSuffixIndex, String finalPath, String Mode, List<String> ignoreList, Node node) throws IllegalAccessException, InvocationTargetException {
         //todo 多层list还没测
         if ("".equals(nextPath)) {
@@ -414,6 +414,10 @@ public class DataAggregateAOP {
                         targetNode.bindPropertyMap.put(bindSourceClassName, listMap);
                     }
                 }
+
+                PropertyDescriptor propertyDescriptor = findTar(clazz, field.getName());//todo 不需要每次重新获取类,设置缓存,只有bind和mapping注解下的才需要
+                AggregateBaseNode baseNode = new AggregateBaseNode(propertyDescriptor.getWriteMethod(), propertyDescriptor.getReadMethod(), field, nextPathName);
+                targetNode.propertyBaseNodeMap.put(nextPathName, baseNode);
             }
 
             if (propertyTypeClass.isAssignableFrom(List.class)) {
@@ -869,7 +873,7 @@ public class DataAggregateAOP {
      * @return void
      * @author zhengxin
      */
-    //todo 关键性能节点多线程
+    //todo 关键性能节点多线程,静态解析放到启动
     @SneakyThrows
     @AfterReturning(pointcut = "resultAop()", returning = "response")
     public void doDataAggregate(Object response) {
@@ -1064,6 +1068,8 @@ public class DataAggregateAOP {
         private final Class<?> sourceClass;
         //Class中所有属性平铺路径List(理论上可访问的属性)
         final List<String> propertyList = new ArrayList<>();
+
+        final Map<String, AggregateBaseNode> propertyBaseNodeMap = new HashMap<>();
 
         //需要执行执行器map
         //key 聚合对象的相对属性名 val 对应执行器节点解析信息
@@ -1336,6 +1342,7 @@ public class DataAggregateAOP {
         }
     }
 
+    //todo 此结构多余,可以直接初始化为initAggregateNode()?
     static class AggregateTargetBindProperty {
         /**
          * 标识节点类别
