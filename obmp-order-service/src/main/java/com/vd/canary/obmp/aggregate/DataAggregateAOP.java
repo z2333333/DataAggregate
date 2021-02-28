@@ -343,7 +343,7 @@ public class DataAggregateAOP {
                 PropertyDescriptor propertyDescriptor = findTar(clazz, field.getName());//todo 不需要每次重新获取类,设置缓存
                 AggregateBaseNode baseNode = new AggregateBaseNode(propertyDescriptor.getWriteMethod(), propertyDescriptor.getReadMethod(), field, nextPathName);
                 sourceNode.propertyAggregateMap.put(nextPathName, baseNode);
-                baseNode.initAggregateBaseNode(sourceNode.propertyAggregateMap.get(tmpAbsolutePathName));
+                baseNode.initAggregateBaseNodeActuator(sourceNode.propertyAggregateMap.get(tmpAbsolutePathName));
             } else {
                 //解析聚合对象属性绑定注解
                 targetNode.propertyList.add(nextPathName);
@@ -387,7 +387,7 @@ public class DataAggregateAOP {
 
                     }
                     //todo 1.字段-在聚合对象中查找当前层级的同名字段 2.属性-查找当前层级同名属性 3.剩余字段如何处理?
-                    aggregateTargetBindProperties.add(new AggregateTargetBindProperty(value, nextPathName, true, 1, bindSourceClassName, false, level));
+                    aggregateTargetBindProperties.add(new AggregateTargetBindProperty(value, nextPathName, true, 1, bindSourceClassName, "", level));
                 }
 
                 //约定 聚合对象下相同执行器可出现多次(需要指定别名)
@@ -418,6 +418,7 @@ public class DataAggregateAOP {
                 PropertyDescriptor propertyDescriptor = findTar(clazz, field.getName());//todo 不需要每次重新获取类,设置缓存,只有bind和mapping注解下的才需要
                 AggregateBaseNode baseNode = new AggregateBaseNode(propertyDescriptor.getWriteMethod(), propertyDescriptor.getReadMethod(), field, nextPathName);
                 targetNode.propertyBaseNodeMap.put(nextPathName, baseNode);
+                baseNode.initAggregateBaseNodeTar(targetNode.propertyBaseNodeMap.get(tmpAbsolutePathName));
             }
 
             if (propertyTypeClass.isAssignableFrom(List.class)) {
@@ -525,7 +526,7 @@ public class DataAggregateAOP {
     }
 
     // TODO: 这里反写mapping的值,或者把整个反写逻辑放过来?
-    private void buildDataAggregate1(Object sourceData, AggregatePrepare aggregatePrepare) throws InvocationTargetException, IllegalAccessException, NoSuchMethodException, InstantiationException {
+    private void buildDataAggregate1(Object sourceData, Object targetData, AggregatePrepare aggregatePrepare, AggregateTargetNode targetNode) throws InvocationTargetException, IllegalAccessException, NoSuchMethodException, InstantiationException {
         Node firstNode = aggregatePrepare.mappingNode;
         if (firstNode == null) {
             return;
@@ -542,7 +543,19 @@ public class DataAggregateAOP {
         //根据层级节点计算
         //从属性理论路径构建实际访问路径(同时维护了节点此次的值)
         List<String> buildStatementList = buildStatementList(sourceData, new ArrayList(), lastNode.commonPrepareNodes.get(0).aggregatePropertyPath, -1, -1, "", "read", new ArrayList<>(), lastNode);
-        //todo 维护resp的绑定与映射读写方法
+
+        if (lastNode.commonPrepareNodes.get(0).isContainer()) {
+            //获取关联key
+            AggregateBaseNode primaryAggregateBaseNode = aggregateSourceNode.primaryAggregateBaseNode;
+            //执行器节点数组
+            ArrayList actuatorContainer = (ArrayList) lastNode.getContainer(aggregateSourceNode, sourceData);
+            //聚合对象节点数组 todo 维护targetNode.propertyBaseNodeMap的容器类型
+            AggregateBaseNode aggregateBaseNode = targetNode.propertyBaseNodeMap.get(lastNode.commonPrepareNodes.get(0).targetPropertyPath);
+            ArrayList tarContainer = (ArrayList) aggregateBaseNode.getContainer(aggregatePrepare.lastNode, targetData);
+            //todo 根据双方关联key进行比对后设置值
+
+        }
+
         for (int i = 0; i < buildStatementList.size(); i++) {
             String buildStatement = buildStatementList.get(i);
 
@@ -944,7 +957,7 @@ public class DataAggregateAOP {
                         continue;
                     }
                     dataAggregate.doDataAggregate();
-                    buildDataAggregate1(dataAggregate, aggregatePrepare);
+                    buildDataAggregate1(dataAggregate, responseData, aggregatePrepare, targetNode);
                     //数据反写
                     //优先使用mapping注解
                     //todo 与之前的解析模式结合,执行完的结果是否继续写到sourcenode中去
@@ -1227,8 +1240,14 @@ public class DataAggregateAOP {
                                     }
                                 }
 
-                                if (tarProperty.primary) {
-                                    aggregatePrepare.aggregateSourceNode.primaryAggregateBaseNode = aggregateBaseNode;
+                                if (!tarProperty.primary.equals("")) {
+                                    AggregateBaseNode primaryNode = aggregatePrepare.aggregateSourceNode.propertyAggregateMap.get(tarProperty.primary);
+                                    primaryNode.targetPropertyPath = aggregateTargetPropertyName;
+                                    if (primaryNode == null) {
+                                        log.error("数据聚合-指定关联Id异常,聚合对象={},绑定属性={}", sourceClass.getName(), sourceClass.getName(), tarProperty.primary);
+                                        throw new BusinessException(120_000, "数据聚合-指定关联Id异常");
+                                    }
+                                    aggregatePrepare.aggregateSourceNode.primaryAggregateBaseNode = primaryNode;
                                 }
                                 aggregatePrepare.addCommonPrepareNode(tarNode, aggregateBaseNode.initVal(aggregateTargetPropertyName, tarProperty.isRequired(), tarProperty.primary));
                             } else {
@@ -1281,9 +1300,6 @@ public class DataAggregateAOP {
                                     }
                                 }
 
-                                if (tarProperty.primary) {
-                                    aggregatePrepare.aggregateSourceNode.primaryAggregateBaseNode = aggregateBaseNode;
-                                }
                                 aggregatePrepare.addCommonPrepareNode(tarNode, aggregateBaseNode.initVal(tarProperty.getAggregateTargetPropertyName(), tarProperty.isRequired(), tarProperty.primary));
                             }
                         }
@@ -1357,11 +1373,11 @@ public class DataAggregateAOP {
         private final String aggregateTargetPropertyName;
         //标示绑定到执行器的属性是否必要
         private final boolean required;
-        private final boolean primary;
+        private final String primary;
         //list类型嵌套属性的层级(非List下的普通属性为0)
         private int level;
 
-        public AggregateTargetBindProperty(String v1, String v2, boolean v3, int v5, String v6, boolean v7, int level) {
+        public AggregateTargetBindProperty(String v1, String v2, boolean v3, int v5, String v6, String v7, int level) {
             this.actuatorPropertyName = v1;
             this.aggregateTargetPropertyName = v2;
             this.required = v3;
@@ -1448,7 +1464,7 @@ public class DataAggregateAOP {
 
         //标示绑定到执行器的属性是否必要
         private boolean required;
-        private boolean primary;
+        private String primary;
         //执行器对象属性路径
         private String aggregatePropertyPath;
         //聚合对象属性路径
@@ -1487,14 +1503,14 @@ public class DataAggregateAOP {
             }
         }
 
-        public AggregateBaseNode initVal(String targetPropertyPath, boolean required, boolean primary) {
+        public AggregateBaseNode initVal(String targetPropertyPath, boolean required, String primary) {
             this.primary = primary;
             this.required = required;
             this.targetPropertyPath = targetPropertyPath;
             return this;
         }
 
-        public void initAggregateBaseNode(AggregateBaseNode previousBaseNode) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException, NoSuchFieldException {
+        public void initAggregateBaseNodeActuator(AggregateBaseNode previousBaseNode) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException, NoSuchFieldException {
             if (containerType != null) {
                 propertyInstance = containerType.getDeclaredConstructor().newInstance();
             } else {
@@ -1526,6 +1542,19 @@ public class DataAggregateAOP {
             initialized = true;
         }
 
+        public void initAggregateBaseNodeTar(AggregateBaseNode previousBaseNode) {
+            if (previousBaseNode != null) {
+                this.preAggregateBaseNode = previousBaseNode;
+                this.preInstance = previousBaseNode.propertyInstance;
+                previousBaseNode.subPropertyNode.add(this);
+                if (previousBaseNode.isContainer()) {
+                    //将容器下属的泛型解析指向容器本身
+                    this.setContainer(true);
+                }
+            }
+            initialized = true;
+        }
+
         public void injectNodeVal(Object val, Object instance) throws IllegalAccessException, InvocationTargetException {
             this.writeMethod.invoke(instance, val);
         }
@@ -1543,6 +1572,21 @@ public class DataAggregateAOP {
                 propertyInstance = field.getType().getDeclaredConstructor().newInstance();
             }
             return (T) propertyInstance;
+        }
+
+        private Collection getContainer(Node node, Object source) throws InvocationTargetException, IllegalAccessException {
+            if (isContainer()) {
+                //todo 根据Node的level和curLevelPropertyName获取上级容器
+                AggregateBaseNode curAggregateBaseNode = this;
+                while (!node.curLevelPropertyName.equals(curAggregateBaseNode.aggregatePropertyPath)) {
+                    if (curAggregateBaseNode.preAggregateBaseNode == null) {
+                        throw new BusinessException(120_000, "数据聚合-未找到目标节点");
+                    }
+                    curAggregateBaseNode = curAggregateBaseNode.preAggregateBaseNode;
+                }
+                return (Collection) curAggregateBaseNode.readMethod.invoke(source);
+            }
+            return null;
         }
 
         public void clear() {
@@ -1624,6 +1668,11 @@ public class DataAggregateAOP {
                 nodeBindValMap.get(key).put(prepareNode, val);
             }
             return true;
+        }
+
+        private Object getContainer(AggregateSourceNode aggregateSourceNode, Object source) throws InvocationTargetException, IllegalAccessException {
+            AggregateBaseNode aggregateBaseNode = aggregateSourceNode.propertyAggregateMap.get(curLevelPropertyName);
+            return aggregateBaseNode.readMethod.invoke(source);
         }
     }
 

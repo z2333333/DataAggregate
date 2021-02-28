@@ -38,4 +38,10 @@ public @interface DataAggregatePropertyMapping {
      * @return
      */
     String alias() default "";
+
+    /**
+     * 标示当前绑定值是否为处理结果的主键
+     * @return
+     */
+    boolean primary() default false;
 }

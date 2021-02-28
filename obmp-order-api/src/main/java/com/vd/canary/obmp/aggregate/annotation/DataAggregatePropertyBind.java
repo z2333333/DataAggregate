@@ -44,5 +44,5 @@ public @interface DataAggregatePropertyBind {
      * 标示当前绑定值是否为处理结果的主键
      * @return
      */
-    boolean primary() default false;
+    String primary() default "";
 }
