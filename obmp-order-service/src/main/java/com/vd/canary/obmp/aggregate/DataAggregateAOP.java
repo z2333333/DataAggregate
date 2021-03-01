@@ -1115,118 +1115,80 @@ public class DataAggregateAOP {
                         }
 
                         for (AggregateTargetBindProperty tarProperty : tarProperties) {
+                            int level = tarProperty.level;
                             int nodeType = tarProperty.nodeType;
+                            Node firstNode;
+                            String propertyName;
                             if (nodeType == 0) {
-                                String aggregateTargetPropertyName = tarProperty.getAggregateTargetPropertyName();
-                                //绑定类型
-                                int level = tarProperty.level;
-                                //list类型嵌套属性
-                                Node firstNode = aggregatePrepare.getBindNode();
-                                String[] nodePath = aggregateTargetPropertyName.split("\\.");
-                                if (firstNode == null) {
-                                    //初始化链路节点(可能从任意节点开始)
-                                    List<Node> nodes = new ArrayList<>(List.of(new Node("~", 0, nodeType)));
-                                    int index = 0;
-                                    while (index < level) {
-                                        Node curNode = new Node(nodePath[index], index + 1, nodeType);//todo 位移
-                                        nodes.add(curNode);
-                                        index++;
-                                    }
-                                    for (int i = 0; i < nodes.size(); i++) {
-                                        Node curNode = nodes.get(i);
-                                        if (i == 0) {
-                                            firstNode = curNode;
+                                //绑定
+                                propertyName = tarProperty.getAggregateTargetPropertyName();
+                                firstNode = aggregatePrepare.getBindNode();
+                            }else {
+                                //映射
+                                propertyName = tarProperty.actuatorPropertyName;
+                                firstNode = aggregatePrepare.mappingNode;
+                            }
+                            String[] nodePath = propertyName.split("\\.");
+                            if (firstNode == null) {
+                                //初始化链路节点(可能从任意节点开始)
+                                List<Node> nodes = new ArrayList<>(List.of(new Node("~", 0, nodeType)));
+                                int index = 0;
+                                while (index < level) {
+                                    Node curNode = new Node(nodePath[index], index + 1, nodeType);//todo 位移
+                                    nodes.add(curNode);
+                                    index++;
+                                }
+                                for (int i = 0; i < nodes.size(); i++) {
+                                    Node curNode = nodes.get(i);
+                                    if (i == 0) {
+                                        firstNode = curNode;
+                                        if (nodeType == 0) {
                                             aggregatePrepare.bindNode = firstNode;
-                                        }
-                                        curNode.prev = i == 0 ? null : nodes.get(i - 1);
-                                        if (i + 1 < nodes.size()) {
-                                            curNode.next.add(nodes.get(i + 1));
-                                        }
-                                    }
-                                }
-
-                                //遍历链路获取当前Level对应的节点
-                                Node tarNode = firstNode;
-                                for (int i = 0; i < level; i++) {
-                                    Node curNode = null;
-                                    for (Node node : tarNode.next) {
-                                        if (nodePath[i].equals(node.curLevelPropertyName)) {
-                                            curNode = node;
-                                            continue;
-                                        }
-                                    }
-
-                                    if (curNode != null) {
-                                        tarNode = curNode;
-                                    } else {
-                                        //节点不存在则新建
-                                        Node newNode = new Node(nodePath[i], i + 1, nodeType);
-                                        newNode.prev = tarNode;
-                                        tarNode.next.add(newNode);
-                                        tarNode = newNode;
-                                    }
-                                }
-
-                                if (!tarProperty.primary.equals("")) {
-                                    AggregateBaseNode primaryNode = aggregatePrepare.aggregateSourceNode.propertyAggregateMap.get(tarProperty.primary);
-                                    primaryNode.targetPropertyPath = aggregateTargetPropertyName;
-                                    if (primaryNode == null) {
-                                        log.error("数据聚合-指定关联Id异常,聚合对象={},绑定属性={}", sourceClass.getName(), sourceClass.getName(), tarProperty.primary);
-                                        throw new BusinessException(120_000, "数据聚合-指定关联Id异常");
-                                    }
-                                    aggregatePrepare.aggregateSourceNode.primaryAggregateBaseNode = primaryNode;
-                                }
-                                aggregatePrepare.addCommonPrepareNode(tarNode, aggregateBaseNode.initVal(aggregateTargetPropertyName, tarProperty.isRequired(), tarProperty.primary));
-                            } else {
-                                //映射类型
-                                int level = tarProperty.level;
-                                //list类型嵌套属性
-                                Node firstNode = aggregatePrepare.mappingNode;
-                                String[] nodePath = tarProperty.actuatorPropertyName.split("\\.");
-                                if (firstNode == null) {
-                                    //初始化链路节点(可能从任意节点开始)
-                                    List<Node> nodes = new ArrayList<>(List.of(new Node("~", 0, nodeType)));
-                                    int index = 0;
-                                    while (index < level) {
-                                        Node curNode = new Node(nodePath[index], index + 1, nodeType);//todo 位移
-                                        nodes.add(curNode);
-                                        index++;
-                                    }
-                                    for (int i = 0; i < nodes.size(); i++) {
-                                        Node curNode = nodes.get(i);
-                                        if (i == 0) {
-                                            firstNode = curNode;
+                                        }else {
                                             aggregatePrepare.mappingNode = firstNode;
                                         }
-                                        curNode.prev = i == 0 ? null : nodes.get(i - 1);
-                                        if (i + 1 < nodes.size()) {
-                                            curNode.next.add(nodes.get(i + 1));
-                                        }
+                                    }
+                                    curNode.prev = i == 0 ? null : nodes.get(i - 1);
+                                    if (i + 1 < nodes.size()) {
+                                        curNode.next.add(nodes.get(i + 1));
+                                    }
+                                }
+                            }
+                            //遍历链路获取当前Level对应的最终节点
+                            Node tarNode = firstNode;
+                            for (int i = 0; i < level; i++) {
+                                Node curNode = null;
+                                for (Node node : tarNode.next) {
+                                    if (nodePath[i].equals(node.curLevelPropertyName)) {
+                                        curNode = node;
+                                        continue;
                                     }
                                 }
 
-                                //遍历链路获取当前Level对应的最终节点
-                                Node tarNode = firstNode;
-                                for (int i = 0; i < level; i++) {
-                                    Node curNode = null;
-                                    for (Node node : tarNode.next) {
-                                        if (nodePath[i].equals(node.curLevelPropertyName)) {
-                                            curNode = node;
-                                            continue;
-                                        }
-                                    }
-
-                                    if (curNode != null) {
-                                        tarNode = curNode;
-                                    } else {
-                                        //节点不存在则新建
-                                        Node newNode = new Node(nodePath[i], i + 1, nodeType);
-                                        newNode.prev = tarNode;
-                                        tarNode.next.add(newNode);
-                                        tarNode = newNode;
-                                    }
+                                if (curNode != null) {
+                                    tarNode = curNode;
+                                } else {
+                                    //节点不存在则新建
+                                    Node newNode = new Node(nodePath[i], i + 1, nodeType);
+                                    newNode.prev = tarNode;
+                                    tarNode.next.add(newNode);
+                                    tarNode = newNode;
                                 }
+                            }
 
+                            if (!tarProperty.primary.equals("")) {
+                                AggregateBaseNode primaryNode = aggregatePrepare.aggregateSourceNode.propertyAggregateMap.get(tarProperty.primary);
+                                primaryNode.targetPropertyPath = propertyName;
+                                if (primaryNode == null) {
+                                    log.error("数据聚合-指定关联Id异常,聚合对象={},绑定属性={}", sourceClass.getName(), sourceClass.getName(), tarProperty.primary);
+                                    throw new BusinessException(120_000, "数据聚合-指定关联Id异常");
+                                }
+                                aggregatePrepare.aggregateSourceNode.primaryAggregateBaseNode = primaryNode;
+                            }
+
+                            if (nodeType == 0) {
+                                aggregatePrepare.addCommonPrepareNode(tarNode, aggregateBaseNode.initVal(propertyName, tarProperty.isRequired(), tarProperty.primary));
+                            } else {
                                 aggregatePrepare.addCommonPrepareNode(tarNode, aggregateBaseNode.initVal(tarProperty.getAggregateTargetPropertyName(), tarProperty.isRequired(), tarProperty.primary));
                             }
                         }
