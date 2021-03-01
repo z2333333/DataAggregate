@@ -67,8 +67,8 @@ public class DataAggregateAOP {
         put(char.class, new Object[]{Character.class, '\u0000'});
         put(Integer.class, new Object[]{int.class, 0});
         put(Byte.class, new Object[]{byte.class, 0xFFFFFFFF});
-        put(Short.class, new Object[]{Short.class, 0xFFFFFFFF});
-        put(Long.class, new Object[]{Long.class, 0});
+        put(Short.class, new Object[]{short.class, 0xFFFFFFFF});
+        put(Long.class, new Object[]{long.class, 0});
         put(Float.class, new Object[]{float.class, 0});
         put(Double.class, new Object[]{double.class, 0});
         put(Boolean.class, new Object[]{boolean.class, false});
@@ -291,7 +291,7 @@ public class DataAggregateAOP {
             for (AggregateSourceNode aggregateSourceNode : aggregateSourceNodes) {
                 //设置解析对象待执行器
                 if (!targetNode.propertyAggregateMap.containsKey(targetPropertyName)) {
-                    targetNode.propertyAggregateMap.put(targetPropertyName, Arrays.asList(aggregateSourceNode));
+                    targetNode.propertyAggregateMap.put(targetPropertyName, new ArrayList<>(List.of(aggregateSourceNode)));
                 } else {
                     targetNode.propertyAggregateMap.get(targetPropertyName).add(aggregateSourceNode);
                 }
