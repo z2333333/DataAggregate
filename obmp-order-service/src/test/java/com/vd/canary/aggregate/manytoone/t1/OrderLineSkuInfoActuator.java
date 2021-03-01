@@ -24,7 +24,8 @@ public class OrderLineSkuInfoActuator extends AbstractOrderDataAggregate {
         System.out.println("根据商品id集合从企业服务获取数据...");
         ProductInfoVoTest productInfoVoTest = new ProductInfoVoTest();
         skuInfos.add(productInfoVoTest);
-        productInfoVoTest.setSkuPic("1342294065443917826");
+        productInfoVoTest.setId("1255464985006567426");
+        productInfoVoTest.setSkuPic("我是商品id:" + "1255464985006567426" + "的图片url");
         List<SkuInfoVO> skuInfoVOS = new ArrayList<>();
         productInfoVoTest.setSkuInfoVOS(skuInfoVOS);
         SkuInfoVO s1 = new SkuInfoVO();
@@ -35,7 +36,8 @@ public class OrderLineSkuInfoActuator extends AbstractOrderDataAggregate {
 
         ProductInfoVoTest productInfoVoTest1 = new ProductInfoVoTest();
         skuInfos.add(productInfoVoTest1);
-        productInfoVoTest1.setSkuPic("1342294065481666561");
+        productInfoVoTest1.setId("1255464985690238978");
+        productInfoVoTest1.setSkuPic("我是商品id:" + "1255464985690238978" + "的图片url");
         List<SkuInfoVO> skuInfoVOS1 = new ArrayList<>();
         productInfoVoTest.setSkuInfoVOS(skuInfoVOS1);
         SkuInfoVO s2 = new SkuInfoVO();

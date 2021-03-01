@@ -544,75 +544,35 @@ public class DataAggregateAOP {
         //从属性理论路径构建实际访问路径(同时维护了节点此次的值)
         List<String> buildStatementList = buildStatementList(sourceData, new ArrayList(), lastNode.commonPrepareNodes.get(0).aggregatePropertyPath, -1, -1, "", "read", new ArrayList<>(), lastNode);
 
+        //todo 多层级嵌套实现
         if (lastNode.commonPrepareNodes.get(0).isContainer()) {
             //获取关联key
             AggregateBaseNode primaryAggregateBaseNode = aggregateSourceNode.primaryAggregateBaseNode;
             //执行器节点数组
             ArrayList actuatorContainer = (ArrayList) lastNode.getContainer(aggregateSourceNode, sourceData);
-            //聚合对象节点数组 todo 维护targetNode.propertyBaseNodeMap的容器类型
+            //聚合对象节点数组
             AggregateBaseNode aggregateBaseNode = targetNode.propertyBaseNodeMap.get(lastNode.commonPrepareNodes.get(0).targetPropertyPath);
             ArrayList tarContainer = (ArrayList) aggregateBaseNode.getContainer(aggregatePrepare.lastNode, targetData);
-            //todo 根据双方关联key进行比对后设置值
 
-        }
+            //key->将关联键的值 val->bindValMap(属性层下的所有映射值)
+            Map<Object,Map<AggregateBaseNode, Object>> actuatorKeyMap = new HashMap<>();
+            for (int i = 0; i < actuatorContainer.size(); i++) {
+                Object actuatorVal = actuatorContainer.get(i);
+                Map<AggregateBaseNode, Object> nodeObjectMap = lastNode.nodeBindValMap.get(lastNode.curLevelPropertyName + "[" + i + "]");
+                actuatorKeyMap.put(primaryAggregateBaseNode.readMethod.invoke(actuatorVal), nodeObjectMap);
+            }
 
-        for (int i = 0; i < buildStatementList.size(); i++) {
-            String buildStatement = buildStatementList.get(i);
-
-            //Map<Method, Object>[] maps = filterTarStatementList(buildStatement, aggregatePrepare.nodeMap);
-            //展开节点注入各级依赖值
-            Object containerTypeInstance = null;
-            String str = "";
-            String[] statementSplit = buildStatement.split("\\.");
-            for (int j = 0; j < statementSplit.length; j++) {
-                String sj = statementSplit[j];
-                if (sj.charAt(0) == '[') {
-                    //处理[].xxx的情况
-                    str = sj;
-                    continue;
-                }
-
-                Map<AggregateBaseNode, Object> methodObjectMap;
-                int index = sj.lastIndexOf("[");
-                if (index == -1) {
-                    //处理根节点
-                    methodObjectMap = aggregatePrepare.nodeMap.get("~").nodeBindValMap.get("~");
-                } else {
-                    str = j == 0 ? sj : str + "." + sj;
-                    String nodeName = sj.substring(0, index);
-                    Node node = aggregatePrepare.nodeMap.get(nodeName);
-                    methodObjectMap = node.nodeBindValMap.get(str);
-                }
-                if (methodObjectMap == null) {
-                    continue;
-                }
-                //处理每一级展开节点下的所有绑定值(xx[].all)
-                for (Map.Entry<AggregateBaseNode, Object> methodObjectEntry : methodObjectMap.entrySet()) {
-                    AggregateBaseNode baseNode = methodObjectEntry.getKey();
-                    aggregateSourceNode.waitResetBaseNodes.add(baseNode);
-                    Object value = methodObjectEntry.getValue();
-                    if (!aggregateSourceNode.isSingleton()) {
-                        //todo baseNode传入的是baseNode的上一级
-                        baseNode.writeMethod.invoke(instance, value);
-                    } else {
-                        if (j == 0) {
-                            //belongContainer = baseNode.belongContainer;
-                            containerTypeInstance = baseNode.getNodeElementCloneable();
-                        }
-                        baseNode.injectNodeVal(value, containerTypeInstance);
+            AggregateBaseNode tarBaseNode = targetNode.propertyBaseNodeMap.get(primaryAggregateBaseNode.targetPropertyPath);
+            for (Object tarVal : tarContainer) {
+                Object tarKeyVal = tarBaseNode.readMethod.invoke(tarVal);
+                Map<AggregateBaseNode, Object> nodeObjectMap = actuatorKeyMap.get(tarKeyVal);
+                if (nodeObjectMap != null) {
+                    for (Map.Entry<AggregateBaseNode, Object> nodeObjectEntry : nodeObjectMap.entrySet()) {
+                        targetNode.propertyBaseNodeMap.get(nodeObjectEntry.getKey().targetPropertyPath).writeMethod.invoke(tarVal, nodeObjectEntry.getValue());
                     }
                 }
             }
         }
-//        for (AbstractDataAggregate abstractDataAggregate : instances) {
-//            //从节点回归属性到实例节点
-//            initDataAggregateInstance(aggregateSourceNode, abstractDataAggregate);
-//        }
-
-//        Iterator<AggregateBaseNode> iterator = waitResetBaseNode.iterator();
-//        while (iterator.hasNext()) {
-//            iterator.next().clear();
-//        }
     }
 
     /**
@@ -957,36 +917,9 @@ public class DataAggregateAOP {
                         continue;
                     }
                     dataAggregate.doDataAggregate();
-                    buildDataAggregate1(dataAggregate, responseData, aggregatePrepare, targetNode);
                     //数据反写
                     //优先使用mapping注解
-                    //todo 与之前的解析模式结合,执行完的结果是否继续写到sourcenode中去
-                    List<AggregateTargetBindProperty> tarProperties;
-                    tarProperties = targetNode.getTarBindProperty(classMap, sourceNode.allowPropertyList, 1);
-                    tarProperties = tarProperties.size() == 0 ? targetNode.getTarBindProperty(defaultClassMap, sourceNode.allowPropertyList, 1) : tarProperties;
-                    for (AggregateTargetBindProperty tarProperty : tarProperties) {
-                        List<String> targetStatementList = buildStatementList(responseData, new ArrayList(), tarProperty.aggregateTargetPropertyName, -1, -1, "", "write", new ArrayList<>(), null);
-                        List<String> sourceStatementList = buildStatementList(responseData, new ArrayList(), tarProperty.actuatorPropertyName, -1, -1, "", "read", new ArrayList<>(), null);
-
-                        for (int j = 0; j < targetStatementList.size(); j++) {
-                            String targetStatement = targetStatementList.get(j);
-                            AggregateBaseNode aggregateBaseNode = sourceNode.propertyAggregateMap.get(tarProperty.actuatorPropertyName);
-                            Object val = aggregateBaseNode.readMethod.invoke(dataAggregate);
-                            try {
-                                PropertyUtils.setProperty(responseData, targetStatement, val);
-                            } catch (NoSuchMethodException e) {
-                                //抛出该异常的情况
-                                //1.issue:lombok@Accessors(chain = true)注解生成的set方法无法被此工具类识别
-                                //2.buildStatementList中对write模式的处理(聚合对象中不需要执行器中的某些属性,但write模式中加进来了)-已取消
-                                log.error("数据聚合-数据反写异常,无法获取属性对应setter方法,路径={}", targetStatement, e);
-                            }
-                            if (!sourceNode.isSingleton()) {
-                                //todo 非单例有问题
-                                continue;
-                            }
-                        }
-                    }
-
+                    buildDataAggregate1(dataAggregate, responseData, aggregatePrepare, targetNode);
 
                     for (String waitWriteVal : sourceNode.allowPropertyList) {
                         //对于执行器任意自定义属性,其上层被反写后忽略所有下层
@@ -1209,7 +1142,7 @@ public class DataAggregateAOP {
                                         Node curNode = nodes.get(i);
                                         if (i == 0) {
                                             firstNode = curNode;
-                                            aggregatePrepare.descNode = firstNode;
+                                            aggregatePrepare.bindNode = firstNode;
                                         }
                                         curNode.prev = i == 0 ? null : nodes.get(i - 1);
                                         if (i + 1 < nodes.size()) {
@@ -1408,7 +1341,7 @@ public class DataAggregateAOP {
         private final AggregateSourceNode aggregateSourceNode;
 
         //执行器属性绑定描述节点
-        private Node descNode;
+        private Node bindNode;
         private Node lastNode;
 
         private Node mappingNode;
@@ -1422,7 +1355,7 @@ public class DataAggregateAOP {
         public void iniAggregatePrepare(Class<?> sourceClass) {
             int size;
             Node topNode;
-            List<Node> nextNodes = List.of(descNode);
+            List<Node> nextNodes = List.of(bindNode);
             while ((size = nextNodes.size()) > 0) {
                 if (size == 1) {
                     topNode = nextNodes.get(0);
@@ -1448,7 +1381,7 @@ public class DataAggregateAOP {
         }
 
         public Node getDescNode() {
-            return descNode;
+            return bindNode;
         }
 
         public Node getLastNode() {

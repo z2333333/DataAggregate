@@ -41,7 +41,6 @@ public class PurchaseLineVO implements Serializable {
     private String itemId;
 
     /**
-    /**
      * sku图片
      */
     @DataAggregatePropertyMapping(className = LineSkuInfoActuator.class, value = "skuInfos.skuPic")
