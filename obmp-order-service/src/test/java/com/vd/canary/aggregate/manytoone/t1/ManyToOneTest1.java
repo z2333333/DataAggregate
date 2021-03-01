@@ -8,6 +8,7 @@ import com.vd.canary.obmp.aggregate.DataAggregateAOP;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
 /**
@@ -155,6 +156,9 @@ public class ManyToOneTest1 {
     public void manyToManyTest1() {
         DataAggregateAOP dataAggregateAOP = DataAggregateInstance.getInstance();
         dataAggregateAOP.doDataAggregate(responseBO);
+
         assertNotNull(responseBO.getData());
+        assertEquals("我是商品id:1255464985006567426的图片url", responseBO.getData().getPomPurchaseContractLineList().get(0).getSkuPic());
+        assertEquals("我是商品id:1255464985690238978的图片url", responseBO.getData().getPomPurchaseContractLineList().get(1).getSkuPic());
     }
 }

@@ -123,7 +123,6 @@ public class DataAggregateAOP {
     //todo 递归的性能与溢出隐患问题-尾递归能否解决
     //todo BeanUtils性能:与反射存在2个数量级差距(考虑替换为完全自行反射) https://www.xiaobo.li/?p=1457 https://www.cnblogs.com/Frank-Hao/p/5839140.html
     private List buildStatementList(Object source, List statementList, String nextPath, Integer transferPrefixIndex, Integer transferSuffixIndex, String finalPath, String Mode, List<String> ignoreList, Node node) throws IllegalAccessException, InvocationTargetException {
-        //todo 多层list还没测
         if ("".equals(nextPath)) {
             return statementList;
         }
@@ -442,17 +441,16 @@ public class DataAggregateAOP {
 
     private List<AbstractDataAggregate> buildDataAggregate(Object sourceData, AggregatePrepare aggregatePrepare) throws InvocationTargetException, IllegalAccessException, NoSuchMethodException, InstantiationException {
         List<AbstractDataAggregate> instances = new ArrayList<>();
-        Node firstNode = aggregatePrepare.getDescNode();
+        Node firstNode = aggregatePrepare.getBindNode();
         if (firstNode == null) {
             return instances;
         }
         AbstractDataAggregate instance = null;
-        //AggregateBaseNode belongContainer = null;
         AggregateSourceNode aggregateSourceNode = aggregatePrepare.aggregateSourceNode;
         if (aggregateSourceNode.isSingleton()) {
             instances.add(instance = aggregateSourceNode.getEmptyDataAggregate());
         }
-        Node lastNode = aggregatePrepare.getLastNode();
+        Node lastNode = aggregatePrepare.getBindLastNode();
 
         //填充根节点绑定值
         createNodeLevelData(sourceData, firstNode, "~", sourceData instanceof List);
@@ -485,11 +483,11 @@ public class DataAggregateAOP {
                 int index = sj.lastIndexOf("[");
                 if (index == -1) {
                     //处理根节点
-                    methodObjectMap = aggregatePrepare.nodeMap.get("~").nodeBindValMap.get("~");
+                    methodObjectMap = aggregatePrepare.bindNodeMap.get("~").nodeBindValMap.get("~");
                 } else {
                     str = j == 0 ? sj : str + "." + sj;
                     String nodeName = sj.substring(0, index);
-                    Node node = aggregatePrepare.nodeMap.get(nodeName);
+                    Node node = aggregatePrepare.bindNodeMap.get(nodeName);
                     methodObjectMap = node.nodeBindValMap.get(str);
                 }
                 if (methodObjectMap == null) {
@@ -501,7 +499,6 @@ public class DataAggregateAOP {
                     aggregateSourceNode.waitResetBaseNodes.add(baseNode);
                     Object value = methodObjectEntry.getValue();
                     if (!aggregateSourceNode.isSingleton()) {
-                        //todo baseNode传入的是baseNode的上一级
                         baseNode.writeMethod.invoke(instance, value);
                     } else {
                         if (j == 0) {
@@ -525,17 +522,15 @@ public class DataAggregateAOP {
         return instances;
     }
 
-    // TODO: 这里反写mapping的值,或者把整个反写逻辑放过来?
-    private void buildDataAggregate1(Object sourceData, Object targetData, AggregatePrepare aggregatePrepare, AggregateTargetNode targetNode) throws InvocationTargetException, IllegalAccessException, NoSuchMethodException, InstantiationException {
+    private void reWriteMappingNode(Object sourceData, Object targetData, AggregatePrepare aggregatePrepare, AggregateTargetNode targetNode) throws InvocationTargetException, IllegalAccessException, NoSuchMethodException, InstantiationException {
         Node firstNode = aggregatePrepare.mappingNode;
         if (firstNode == null) {
             return;
         }
         AbstractDataAggregate instance = null;
-        //AggregateBaseNode belongContainer = null;
         AggregateSourceNode aggregateSourceNode = aggregatePrepare.aggregateSourceNode;
 
-        Node lastNode = firstNode.next.get(0);//todo 获取最终级
+        Node lastNode = aggregatePrepare.mappingLastNode;
 
         //填充根节点绑定值
         createNodeLevelData(sourceData, firstNode, "~", sourceData instanceof List);
@@ -552,7 +547,7 @@ public class DataAggregateAOP {
             ArrayList actuatorContainer = (ArrayList) lastNode.getContainer(aggregateSourceNode, sourceData);
             //聚合对象节点数组
             AggregateBaseNode aggregateBaseNode = targetNode.propertyBaseNodeMap.get(lastNode.commonPrepareNodes.get(0).targetPropertyPath);
-            ArrayList tarContainer = (ArrayList) aggregateBaseNode.getContainer(aggregatePrepare.lastNode, targetData);
+            ArrayList tarContainer = (ArrayList) aggregateBaseNode.getContainer(aggregatePrepare.bindLastNode, targetData);
 
             //key->将关联键的值 val->bindValMap(属性层下的所有映射值)
             Map<Object,Map<AggregateBaseNode, Object>> actuatorKeyMap = new HashMap<>();
@@ -720,7 +715,7 @@ public class DataAggregateAOP {
         }
     }
 
-    private AbstractDataAggregate initDataAggregateInstance(AggregateSourceNode sourceNode, AbstractDataAggregate instance) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
+    private AbstractDataAggregate initDataAggregateInstance(AggregateSourceNode sourceNode, AbstractDataAggregate instance) throws IllegalAccessException, InvocationTargetException, InstantiationException {
         //实例化执行器中需注入的嵌套属性
         for (String requirement : sourceNode.ignorePropertyList) {
             AggregateBaseNode baseNode = sourceNode.propertyAggregateMap.get(requirement);
@@ -904,10 +899,6 @@ public class DataAggregateAOP {
                 }
 
                 AggregateSourceNode sourceNode = aggregatePrepare.aggregateSourceNode;
-                Map<String, List<AggregateTargetBindProperty>> classMap, defaultClassMap;
-                classMap = bindPropertyMap.get(sourceNode.sourceClass.getName());
-                defaultClassMap = bindPropertyMap.get("DEFAULT_CLASS_NAME");
-
                 Map<String, Object> reWriteCacheMap = new HashMap<>();
                 Map<String, List<String>> statementCacheMap = new HashMap<>(sourceNode.allowPropertyList.size());
                 for (int i = 0; i < instances.size(); i++) {
@@ -917,64 +908,68 @@ public class DataAggregateAOP {
                         continue;
                     }
                     dataAggregate.doDataAggregate();
+
                     //数据反写
                     //优先使用mapping注解
-                    buildDataAggregate1(dataAggregate, responseData, aggregatePrepare, targetNode);
-
-                    for (String waitWriteVal : sourceNode.allowPropertyList) {
-                        //对于执行器任意自定义属性,其上层被反写后忽略所有下层
-                        if (isReWrite(waitWriteVal, reWriteCacheMap)) {
-                            continue;
-                        }
-
-                        List<String> targetStatementList;
-                        if (!statementCacheMap.containsKey(waitWriteVal)) {
-                            //在聚合对象中查找属性对应的访问路径
-                            //@DataAggregateType注解所在层级优先
-                            //~表示根路径
-                            String possiblePath = curTargetPropertyName.equals("~") ? waitWriteVal : curTargetPropertyName + "." + waitWriteVal;
-                            //todo 1.可以在read模式时一起返回write,做区分,这样只用调用一次 2.当对象为List时相同属性的实际路径只用解析一次(当前解析n次) 3.存在同名属性(但并不是期望的反写值)
-                            targetStatementList = buildStatementList(responseData, new ArrayList(), possiblePath, -1, -1, "", "write", new ArrayList<>(), null);
-
-                            if (targetStatementList.size() == 0) {
-                                //todo 完整查找还要考虑数量匹配的问题（到上层可能找到了但是与执行器数量可能对不上，会导致不断覆盖）
-                                //完整查找
-                                //通过聚合对象理论可访问路径构建实际可访问路径
-                                List<String> actualPathList = new ArrayList<>();
-                                for (String theoryPath : targetNode.propertyList) {
-                                    List buildStatementList = buildStatementList(responseData, new ArrayList(), theoryPath, -1, -1, "", "write", new ArrayList<>(), null);
-                                    actualPathList.addAll(buildStatementList);
-                                }
-                                if (actualPathList.size() == 0) {
-                                    continue;
-                                }
-                                targetStatementList = findTarStatementList(actualPathList, curTargetPropertyName, waitWriteVal);
+                    if (aggregatePrepare.mappingNode != null) {
+                        reWriteMappingNode(dataAggregate, responseData, aggregatePrepare, targetNode);
+                    } else {
+                        for (String waitWriteVal : sourceNode.allowPropertyList) {
+                            //对于执行器任意自定义属性,其上层被反写后忽略所有下层
+                            if (isReWrite(waitWriteVal, reWriteCacheMap)) {
+                                continue;
                             }
-                            statementCacheMap.put(waitWriteVal, targetStatementList);
-                        } else {
-                            targetStatementList = statementCacheMap.get(waitWriteVal);
-                        }
 
-                        if (targetStatementList.size() > 0) {
-                            reWriteCacheMap.put(waitWriteVal, null);
-                            AggregateBaseNode aggregateBaseNode = sourceNode.propertyAggregateMap.get(waitWriteVal);
-                            Object val = aggregateBaseNode.readMethod.invoke(dataAggregate);
+                            List<String> targetStatementList;
+                            if (!statementCacheMap.containsKey(waitWriteVal)) {
+                                //在聚合对象中查找属性对应的访问路径
+                                //@DataAggregateType注解所在层级优先
+                                //~表示根路径
+                                String possiblePath = curTargetPropertyName.equals("~") ? waitWriteVal : curTargetPropertyName + "." + waitWriteVal;
+                                //todo 1.可以在read模式时一起返回write,做区分,这样只用调用一次 2.当对象为List时相同属性的实际路径只用解析一次(当前解析n次) 3.存在同名属性(但并不是期望的反写值)
+                                targetStatementList = buildStatementList(responseData, new ArrayList(), possiblePath, -1, -1, "", "write", new ArrayList<>(), null);
 
-                            //todo 当前适配1:1与n:n
-                            //实际可访问路径与执行器的index有序且对应,直接执行
-                            //String filterTarStatement = filterTarStatementList(targetStatementList, i);
-                            String targetStatement = targetStatementList.get(i);
+                                if (targetStatementList.size() == 0) {
+                                    //todo 完整查找还要考虑数量匹配的问题（到上层可能找到了但是与执行器数量可能对不上，会导致不断覆盖）
+                                    //完整查找
+                                    //通过聚合对象理论可访问路径构建实际可访问路径
+                                    List<String> actualPathList = new ArrayList<>();
+                                    for (String theoryPath : targetNode.propertyList) {
+                                        List buildStatementList = buildStatementList(responseData, new ArrayList(), theoryPath, -1, -1, "", "write", new ArrayList<>(), null);
+                                        actualPathList.addAll(buildStatementList);
+                                    }
+                                    if (actualPathList.size() == 0) {
+                                        continue;
+                                    }
+                                    targetStatementList = findTarStatementList(actualPathList, curTargetPropertyName, waitWriteVal);
+                                }
+                                statementCacheMap.put(waitWriteVal, targetStatementList);
+                            } else {
+                                targetStatementList = statementCacheMap.get(waitWriteVal);
+                            }
 
-                            try {
-                                PropertyUtils.setProperty(responseData, targetStatement, val);
-                            } catch (NoSuchMethodException e) {
-                                //抛出该异常的情况
-                                //1.issue:lombok@Accessors(chain = true)注解生成的set方法无法被此工具类识别
-                                //2.buildStatementList中对write模式的处理(聚合对象中不需要执行器中的某些属性,但write模式中加进来了)-已取消
-                                log.error("数据聚合-数据反写异常,无法获取属性对应setter方法,路径={}", targetStatement, e);
+                            if (targetStatementList.size() > 0) {
+                                reWriteCacheMap.put(waitWriteVal, null);
+                                AggregateBaseNode aggregateBaseNode = sourceNode.propertyAggregateMap.get(waitWriteVal);
+                                Object val = aggregateBaseNode.readMethod.invoke(dataAggregate);
+
+                                //todo 当前适配1:1与n:n
+                                //实际可访问路径与执行器的index有序且对应,直接执行
+                                //String filterTarStatement = filterTarStatementList(targetStatementList, i);
+                                String targetStatement = targetStatementList.get(i);
+
+                                try {
+                                    PropertyUtils.setProperty(responseData, targetStatement, val);
+                                } catch (NoSuchMethodException e) {
+                                    //抛出该异常的情况
+                                    //1.issue:lombok@Accessors(chain = true)注解生成的set方法无法被此工具类识别
+                                    //2.buildStatementList中对write模式的处理(聚合对象中不需要执行器中的某些属性,但write模式中加进来了)-已取消
+                                    log.error("数据聚合-数据反写异常,无法获取属性对应setter方法,路径={}", targetStatement, e);
+                                }
                             }
                         }
                     }
+
                     reWriteCacheMap.clear();
                 }
                 sourceNode.clear();
@@ -982,7 +977,7 @@ public class DataAggregateAOP {
         }
     }
 
-    public Object getClassInstance(Class<?> clazz) throws NoSuchFieldException, IllegalAccessException, NoSuchMethodException, InvocationTargetException, InstantiationException {
+    public Object getClassInstance(Class<?> clazz) throws IllegalAccessException, NoSuchMethodException, InvocationTargetException, InstantiationException {
 //        Class type = (Class) clazz.getField("TYPE").get(null);
 //        if (type.isPrimitive()) {
 //            return clazz.getDeclaredConstructor(type).newInstance();
@@ -1025,7 +1020,6 @@ public class DataAggregateAOP {
         //key 执行器类名(或default) val <key 绑定/映射的执行器中的相对属性名 val 聚合对象相对属性名>
         final Map<String, Map<String, List<AggregateTargetBindProperty>>> bindPropertyMap = new HashMap<>();
 
-        //todo key-聚合对象属性, val-执行器及所有属性绑定分布(List),保持层级关系(下一级扩容时复制上一级的属性),do中直接遍历执行即可
         //key 聚合对象属性 val 所有执行器中属性在当前聚合对象属性绑定关系的描述(维护了层级关系)
         final Map<String, List<AggregatePrepare>> aggregatePrepareMap = new HashMap<>();
 
@@ -1127,7 +1121,7 @@ public class DataAggregateAOP {
                                 //绑定类型
                                 int level = tarProperty.level;
                                 //list类型嵌套属性
-                                Node firstNode = aggregatePrepare.getDescNode();
+                                Node firstNode = aggregatePrepare.getBindNode();
                                 String[] nodePath = aggregateTargetPropertyName.split("\\.");
                                 if (firstNode == null) {
                                     //初始化链路节点(可能从任意节点开始)
@@ -1185,7 +1179,7 @@ public class DataAggregateAOP {
                                 aggregatePrepare.addCommonPrepareNode(tarNode, aggregateBaseNode.initVal(aggregateTargetPropertyName, tarProperty.isRequired(), tarProperty.primary));
                             } else {
                                 //映射类型
-                                int level = tarProperty.level;//todo 这里的level是聚合对象的?
+                                int level = tarProperty.level;
                                 //list类型嵌套属性
                                 Node firstNode = aggregatePrepare.mappingNode;
                                 String[] nodePath = tarProperty.actuatorPropertyName.split("\\.");
@@ -1342,11 +1336,12 @@ public class DataAggregateAOP {
 
         //执行器属性绑定描述节点
         private Node bindNode;
-        private Node lastNode;
+        private Node bindLastNode;
 
         private Node mappingNode;
+        private Node mappingLastNode;
 
-        private Map<String, Node> nodeMap = new HashMap<>();
+        private Map<String, Node> bindNodeMap = new HashMap<>();
 
         public AggregatePrepare(AggregateSourceNode var) {
             this.aggregateSourceNode = var;
@@ -1359,8 +1354,8 @@ public class DataAggregateAOP {
             while ((size = nextNodes.size()) > 0) {
                 if (size == 1) {
                     topNode = nextNodes.get(0);
-                    if (!nodeMap.containsKey(topNode.curLevelPropertyName)) {
-                        nodeMap.put(topNode.curLevelPropertyName, topNode);
+                    if (!bindNodeMap.containsKey(topNode.curLevelPropertyName)) {
+                        bindNodeMap.put(topNode.curLevelPropertyName, topNode);
                     }
                     if (topNode.next.size() > 0) {
                         nextNodes = nextNodes.get(0).next;
@@ -1373,19 +1368,41 @@ public class DataAggregateAOP {
                     throw new BusinessException(120_000, "数据聚合-执行器数据绑定解析异常:未支持属性跨List绑定");
                 }
             }
-            this.lastNode = nextNodes.get(0);
+            this.bindLastNode = nextNodes.get(0);
+            iniAggregatePrepareMappingNode(sourceClass);
+        }
+
+        public void iniAggregatePrepareMappingNode(Class<?> sourceClass) {
+            int size;
+            Node topNode;
+            List<Node> nextNodes = List.of(mappingNode);
+            while ((size = nextNodes.size()) > 0) {
+                if (size == 1) {
+                    topNode = nextNodes.get(0);
+                    if (topNode.next.size() > 0) {
+                        nextNodes = nextNodes.get(0).next;
+                    } else {
+                        break;
+                    }
+                } else {
+                    //issue:执行器属性绑定跨多个List时,最终数应为它们的直积,结合实际应用场景与此时数据反写判断与性能问题,暂不支持该情况
+                    log.error("数据聚合-执行器数据映射解析异常:属性跨List映射,聚合对象={},执行器={},绑定属性={}", sourceClass.getName(), aggregateSourceNode.sourceClass.getName(), nextNodes.toArray());
+                    throw new BusinessException(120_000, "数据聚合-执行器数据映射解析异常:未支持属性跨List映射");
+                }
+            }
+            this.mappingLastNode = nextNodes.get(0);
         }
 
         public void addCommonPrepareNode(Node tarNode, AggregateBaseNode node) {
             tarNode.commonPrepareNodes.add(node);
         }
 
-        public Node getDescNode() {
+        public Node getBindNode() {
             return bindNode;
         }
 
-        public Node getLastNode() {
-            return lastNode;
+        public Node getBindLastNode() {
+            return bindLastNode;
         }
     }
 

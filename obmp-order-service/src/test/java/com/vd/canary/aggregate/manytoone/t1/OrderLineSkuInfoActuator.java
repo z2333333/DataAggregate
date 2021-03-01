@@ -21,7 +21,7 @@ public class OrderLineSkuInfoActuator extends AbstractOrderDataAggregate {
 
     @Override
     public void doDataAggregate(Object... args) {
-        System.out.println("根据商品id集合从企业服务获取数据...");
+        System.out.println("根据商品id集合从商品服务获取数据...");
         ProductInfoVoTest productInfoVoTest = new ProductInfoVoTest();
         skuInfos.add(productInfoVoTest);
         productInfoVoTest.setId("1255464985006567426");
