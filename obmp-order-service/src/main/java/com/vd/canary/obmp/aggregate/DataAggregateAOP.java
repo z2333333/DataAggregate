@@ -717,14 +717,15 @@ public class DataAggregateAOP {
 
     private AbstractDataAggregate initDataAggregateInstance(AggregateSourceNode sourceNode, AbstractDataAggregate instance) throws IllegalAccessException, InvocationTargetException, InstantiationException {
         //实例化执行器中需注入的嵌套属性
-        for (String requirement : sourceNode.ignorePropertyList) {
-            AggregateBaseNode baseNode = sourceNode.propertyAggregateMap.get(requirement);
-            if (baseNode == null) {
-                throw new BusinessException(120_000, "实例化执行器异常-无法获取获取需注入属性的解析节点");
-            }
-            Object propertyInstance = baseNode.propertyInstance;
-            baseNode.writeMethod.invoke(instance, propertyInstance);
-        }
+//        for (String requirement : sourceNode.ignorePropertyList) {
+//            AggregateBaseNode baseNode = sourceNode.propertyAggregateMap.get(requirement);
+//            if (baseNode == null) {
+//                throw new BusinessException(120_000, "实例化执行器异常-无法获取获取需注入属性的解析节点");
+//            }
+//
+//            Object propertyInstance = baseNode.propertyInstance;
+//            baseNode.writeMethod.invoke(instance, propertyInstance);
+//        }
 
         Map<Method, Object> initMap = new HashMap<>();
         for (Map.Entry<String, Object> classEntry : sourceNode.resourcePropertyMap.entrySet()) {
@@ -1312,6 +1313,9 @@ public class DataAggregateAOP {
         public void iniAggregatePrepare(Class<?> sourceClass) {
             int size;
             Node topNode;
+            if (bindNode == null) {
+                return;
+            }
             List<Node> nextNodes = List.of(bindNode);
             while ((size = nextNodes.size()) > 0) {
                 if (size == 1) {
@@ -1337,6 +1341,9 @@ public class DataAggregateAOP {
         public void iniAggregatePrepareMappingNode(Class<?> sourceClass) {
             int size;
             Node topNode;
+            if (mappingNode == null) {
+                return;
+            }
             List<Node> nextNodes = List.of(mappingNode);
             while ((size = nextNodes.size()) > 0) {
                 if (size == 1) {

@@ -20,9 +20,6 @@ import java.math.BigDecimal;
  * Created with Canary Automatic Code Generator  </p>
  */
 @Data
-//@DataAggregateType({
-//        LineSkuInfoActuator.class
-//})
 @DataAggregateType(profile = {
        @TypeProfile(value = LineSkuInfoActuator.class,mode = TypeProfile.Mode.MANY_TO_ONE)
 })
@@ -37,7 +34,6 @@ public class PurchaseLineVO implements Serializable {
      * 商品ID
      */
     @DataAggregatePropertyBind(value = "skuReq.skuIdList.skuId", className = LineSkuInfoActuator.class,primary = "skuInfos.id")
-    //@DataAggregatePropertyMapping(className = LineSkuInfoActuator.class, value = "skuInfos.skuId", primary = true)
     private String itemId;
 
     /**
