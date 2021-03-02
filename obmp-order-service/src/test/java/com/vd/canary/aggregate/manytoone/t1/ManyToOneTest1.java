@@ -14,7 +14,9 @@ import static org.junit.Assert.assertNotNull;
 /**
  * 复杂场景测试4
  * 特点:
- *
+ * 1.绑定属性位于嵌套容器中
+ * 2.执行器反写时为多对一关系
+ * 3.反写值通过Mapping注解自定义回写
  *
  * @author zx
  * @date 2021/1/14 16:23

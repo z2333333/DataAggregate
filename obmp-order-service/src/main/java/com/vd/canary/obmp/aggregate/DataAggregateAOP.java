@@ -439,6 +439,14 @@ public class DataAggregateAOP {
         return targetNode;
     }
 
+    /***
+     * 初始化执行器(设置依赖值)
+     *
+     * @param sourceData
+     * @param aggregatePrepare
+     * @return java.util.List<com.vd.canary.obmp.aggregate.AbstractDataAggregate>
+     * @author zhengxin
+     */
     private List<AbstractDataAggregate> buildDataAggregate(Object sourceData, AggregatePrepare aggregatePrepare) throws InvocationTargetException, IllegalAccessException, NoSuchMethodException, InstantiationException {
         List<AbstractDataAggregate> instances = new ArrayList<>();
         Node firstNode = aggregatePrepare.getBindNode();
@@ -522,6 +530,16 @@ public class DataAggregateAOP {
         return instances;
     }
 
+    /***
+     *
+     *
+     * @param sourceData
+     * @param targetData
+     * @param aggregatePrepare
+     * @param targetNode
+     * @return void
+     * @author zhengxin
+     */
     private void reWriteMappingNode(Object sourceData, Object targetData, AggregatePrepare aggregatePrepare, AggregateTargetNode targetNode) throws InvocationTargetException, IllegalAccessException, NoSuchMethodException, InstantiationException {
         Node firstNode = aggregatePrepare.mappingNode;
         if (firstNode == null) {
@@ -978,6 +996,13 @@ public class DataAggregateAOP {
         }
     }
 
+    /***
+     * 返回给定类的实例
+     *
+     * @param clazz
+     * @return java.lang.Object
+     * @author zhengxin
+     */
     public Object getClassInstance(Class<?> clazz) throws IllegalAccessException, NoSuchMethodException, InvocationTargetException, InstantiationException {
 //        Class type = (Class) clazz.getField("TYPE").get(null);
 //        if (type.isPrimitive()) {
