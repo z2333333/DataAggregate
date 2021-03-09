@@ -1,5 +1,6 @@
 package cn.zx.core;
 
+
 import cn.zx.annotations.DataAggregatePropertyBind;
 import cn.zx.annotations.DataAggregatePropertyMapping;
 import cn.zx.annotations.DataAggregateType;
@@ -7,6 +8,7 @@ import cn.zx.annotations.TypeProfile;
 import cn.zx.exceptions.BusinessException;
 import cn.zx.resp.ResponseBO;
 import cn.zx.resp.ResponsePageBO;
+import com.alibaba.fastjson.JSON;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.beanutils.NestedNullException;
@@ -88,7 +90,9 @@ public class DataAggregateAOP {
     }
 
     private boolean isParsingClass(Class<?> clazz) {
-        return clazz.getPackageName().contains("com.vd");
+        //return clazz.getPackageName().contains("com.vd");
+        //todo 期望排除掉包括jdk属性等不希望解析的类
+        return clazz.getPackageName().contains("cn.zx");
     }
 
     private boolean isIgnoreField(Field field) {
@@ -864,7 +868,7 @@ public class DataAggregateAOP {
     @AfterReturning(pointcut = "resultAop()", returning = "response")
     public void doDataAggregate(Object response) {
         //todo 测试后删除
-        //log.info("数据聚合(beta日志)-response对象={}", JSONUtil.toJsonStr(response));
+        log.info("数据聚合(beta日志)-response对象={}", JSON.toJSONString(response));
         Object responseData = null;
 
         /* 特性:

@@ -1,7 +1,6 @@
 package cn.zx.aggregate.manytomany.t4;
 
 import cn.zx.annotations.DataAggregatePropertyBind;
-import cn.zx.annotations.DataAggregateType;
 import lombok.Data;
 
 import java.util.List;
@@ -11,9 +10,6 @@ import java.util.List;
  * @date 2021/1/8 13:21
  */
 @Data
-@DataAggregateType({
-        LineSkuImgActuator.class
-})
 public class InquiryDetailSupplierQuotesInfoTestResp {
 
     /**
@@ -52,4 +48,6 @@ public class InquiryDetailSupplierQuotesInfoTestResp {
 
     @DataAggregatePropertyBind("headId")
     private String headId;
+
+//    private InquiryDetailSupplierQuotesInfoTestResp resp;
 }

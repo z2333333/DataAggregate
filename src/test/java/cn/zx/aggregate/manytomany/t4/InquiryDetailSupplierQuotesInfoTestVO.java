@@ -1,6 +1,7 @@
 package cn.zx.aggregate.manytomany.t4;
 
 import cn.zx.annotations.DataAggregatePropertyBind;
+import cn.zx.annotations.DataAggregateType;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -10,6 +11,9 @@ import java.util.List;
 
 @Getter
 @Setter
+@DataAggregateType({
+        LineSkuImgActuator.class
+})
 public class InquiryDetailSupplierQuotesInfoTestVO {
 
     /**
