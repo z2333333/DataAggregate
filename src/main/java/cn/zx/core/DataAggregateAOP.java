@@ -1,6 +1,5 @@
 package cn.zx.core;
 
-
 import cn.zx.annotations.DataAggregatePropertyBind;
 import cn.zx.annotations.DataAggregatePropertyMapping;
 import cn.zx.annotations.DataAggregateType;
@@ -345,7 +344,9 @@ public class DataAggregateAOP {
                 PropertyDescriptor propertyDescriptor = findTar(clazz, field.getName());//todo 不需要每次重新获取类,设置缓存
                 AggregateBaseNode baseNode = new AggregateBaseNode(propertyDescriptor.getWriteMethod(), propertyDescriptor.getReadMethod(), field, nextPathName);
                 sourceNode.propertyAggregateMap.put(nextPathName, baseNode);
-                baseNode.initAggregateBaseNodeActuator(sourceNode.propertyAggregateMap.get(tmpAbsolutePathName));
+                if (!sourceNode.resourcePropertyMap.containsKey(field.getName())) {
+                    baseNode.initAggregateBaseNodeActuator(sourceNode.propertyAggregateMap.get(tmpAbsolutePathName));
+                }
             } else {
                 //解析聚合对象属性绑定注解
                 targetNode.propertyList.add(nextPathName);
@@ -564,6 +565,10 @@ public class DataAggregateAOP {
         if (lastNode.commonPrepareNodes.get(0).isContainer()) {
             //获取关联key
             AggregateBaseNode primaryAggregateBaseNode = aggregateSourceNode.primaryAggregateBaseNode;
+            if (primaryAggregateBaseNode == null) {
+                log.error("数据反写异常,DataAggregatePropertyBind注解primary参数缺失,聚合对象={},执行器={}", targetNode.sourceClass.getName(), aggregateSourceNode.sourceClass.getName());
+                throw new BusinessException(120_000, "数据聚合-数据反写异常,DataAggregatePropertyBind注解primary参数缺失");
+            }
             //执行器节点数组
             ArrayList actuatorContainer = (ArrayList) lastNode.getContainer(aggregateSourceNode, sourceData);
             //聚合对象节点数组
@@ -934,6 +939,7 @@ public class DataAggregateAOP {
                     //数据反写
                     //优先使用mapping注解
                     if (aggregatePrepare.mappingNode != null) {
+                        //todo 关于mapping作为别名时的使用:1.当执行器与聚合对象绑定属性的类型一致时(可能会误判,或增加属性显式指定)直接赋值(还要考虑多对多或多对一)
                         reWriteMappingNode(dataAggregate, responseData, aggregatePrepare, targetNode);
                     } else {
                         for (String waitWriteVal : sourceNode.allowPropertyList) {
